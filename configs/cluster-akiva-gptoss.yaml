@@ -1,0 +1,46 @@
+# GPT-OSS 120B: Akiva (2x XTX + CPU offload) + speculative decoding (desktop 4070 draft)
+# Target: 48 GB VRAM + CPU offload on akiva
+# Draft: GPT-OSS 20B on desktop 4070
+
+coordinator:
+  host: 0.0.0.0
+  port: 8080
+  backend: hip
+  gpus:
+    - name: "RX 7900 XTX (slot 1)"
+      vram_gb: 24
+    - name: "RX 7900 XTX (slot 2)"
+      vram_gb: 24
+  extra_args: ["--no-mmap", "--no-warmup", "-ub", "2048", "-b", "2048", "--np", "1"]
+  env:
+    LD_LIBRARY_PATH: "/home/akiva/llama.cpp/build/bin"
+
+workers: []
+
+models:
+  gpt-oss-120b:
+    path: /models/gpt-oss-120b-UD-Q4_K_XL-00001-of-00002.gguf
+    ctx_size: 2048
+    predict: 1024
+    flash_attn: true
+    default: true
+
+proxy:
+  host: 0.0.0.0
+  port: 8088
+  max_draft_tokens: 32
+  fallback_on_draft_failure: true
+  draft:
+    url: http://192.168.86.36:8081
+    model_name: gpt-oss-20b
+    backend: llamacpp
+  target:
+    url: http://192.168.86.29:8080
+    model_name: gpt-oss-120b
+    backend: llamacpp
+
+binaries:
+  coordinator: /home/akiva/llama.cpp/build/bin/llama-server
+  rpc_server: /home/akiva/llama.cpp/build/bin/rpc-server
+
+ram_reclaim: auto

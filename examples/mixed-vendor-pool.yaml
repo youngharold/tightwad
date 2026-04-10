@@ -1,0 +1,38 @@
+# Mixed-vendor GPU pool — NVIDIA + AMD across machines
+# This is Tightwad's selling point: pool GPUs regardless of vendor.
+#
+# Use case: You have NVIDIA GPUs on one machine and AMD GPUs
+# on another. Pool them all into one endpoint.
+
+coordinator:
+  host: 192.168.1.10    # Machine running the coordinator
+  port: 8080
+  binary: /usr/local/bin/llama-server
+
+workers:
+  # NVIDIA machine
+  - name: nvidia-box
+    host: 192.168.1.10
+    port: 50052
+    gpu:
+      vendor: nvidia
+      model: RTX 4070 Ti Super
+      vram_gb: 16
+
+  # AMD machine (needs ROCm + llama.cpp HIP backend)
+  - name: amd-box
+    host: 192.168.1.20
+    port: 50052
+    gpu:
+      vendor: amd
+      model: RX 7900 XTX
+      vram_gb: 24
+
+models:
+  default: qwen3-32b
+  qwen3-32b:
+    name: Qwen3 32B
+    path: /models/qwen3-32b-Q4_K_M.gguf
+    # AMD has more VRAM, give it more layers
+    # 16GB : 24GB ≈ 40:60
+    tensor_split: "16,24"

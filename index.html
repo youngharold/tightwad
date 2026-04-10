@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tightwad — FAQ, Best Practices &amp; Use Cases</title>
+  <meta name="description" content="FAQ, best practices, and real-world use cases for Tightwad — the mixed-vendor GPU inference cluster manager with speculative decoding.">
+  <link rel="icon" href="https://tightwad.dev/favicon.svg" type="image/svg+xml">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, system-ui, 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; line-height: 1.7; }
+    a { color: #58a6ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code { background: #161b22; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; color: #e6edf3; }
+    pre { background: #161b22; padding: 16px; border-radius: 8px; overflow-x: auto; margin: 12px 0; border: 1px solid #30363d; }
+    pre code { padding: 0; background: none; }
+
+    .container { max-width: 860px; margin: 0 auto; padding: 0 24px; }
+
+    /* Header */
+    header { background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 0; position: sticky; top: 0; z-index: 10; }
+    .header-inner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+    .logo { font-size: 20px; font-weight: 700; color: #e6edf3; display: flex; align-items: center; gap: 8px; }
+    .logo-pig { font-size: 24px; }
+    .nav-links { display: flex; gap: 16px; font-size: 14px; flex-wrap: wrap; }
+    .nav-links a { color: #8b949e; }
+    .nav-links a:hover { color: #58a6ff; text-decoration: none; }
+    .btn-dev { background: #238636; color: #fff; padding: 6px 14px; border-radius: 6px; font-weight: 600; font-size: 13px; }
+    .btn-dev:hover { background: #2ea043; text-decoration: none; }
+
+    /* Hero */
+    .hero { padding: 48px 0 32px; text-align: center; border-bottom: 1px solid #30363d; }
+    .hero h1 { font-size: 32px; color: #e6edf3; margin-bottom: 12px; }
+    .hero p { font-size: 16px; color: #8b949e; max-width: 600px; margin: 0 auto; }
+    .hero-links { margin-top: 20px; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+    /* Section */
+    .section { padding: 48px 0; border-bottom: 1px solid #21262d; }
+    .section:last-child { border-bottom: none; }
+    .section h2 { font-size: 24px; color: #e6edf3; margin-bottom: 24px; padding-bottom: 8px; border-bottom: 2px solid #238636; display: inline-block; }
+    .section h3 { font-size: 18px; color: #e6edf3; margin: 24px 0 8px; }
+
+    /* FAQ */
+    .faq-item { margin-bottom: 24px; }
+    .faq-q { font-size: 16px; font-weight: 600; color: #e6edf3; margin-bottom: 6px; }
+    .faq-a { color: #c9d1d9; }
+    .faq-a p { margin-bottom: 8px; }
+
+    /* Cards */
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 16px; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px; }
+    .card h3 { font-size: 16px; margin: 0 0 8px; color: #58a6ff; }
+    .card p { font-size: 14px; color: #8b949e; margin: 0; }
+    .card code { font-size: 12px; }
+
+    /* Tips */
+    .tip { background: #0d2137; border: 1px solid #1f4068; border-radius: 8px; padding: 14px 18px; margin: 12px 0; }
+    .tip strong { color: #58a6ff; }
+    .warning { background: #2d1a00; border: 1px solid #5a3600; border-radius: 8px; padding: 14px 18px; margin: 12px 0; }
+    .warning strong { color: #d29922; }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+    th { text-align: left; padding: 8px 12px; border-bottom: 2px solid #30363d; color: #8b949e; font-weight: 600; }
+    td { padding: 8px 12px; border-bottom: 1px solid #21262d; }
+
+    /* Footer */
+    footer { padding: 32px 0; text-align: center; color: #484f58; font-size: 13px; border-top: 1px solid #21262d; }
+    footer a { color: #58a6ff; }
+
+    /* TOC */
+    .toc { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 20px 24px; margin: 24px 0; }
+    .toc h3 { font-size: 14px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+    .toc ul { list-style: none; columns: 2; }
+    .toc li { margin-bottom: 6px; font-size: 14px; }
+    @media (max-width: 600px) { .toc ul { columns: 1; } }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="container header-inner">
+    <a href="/" class="logo"><span class="logo-pig">&#x1F437;</span> tightwad docs</a>
+    <div class="nav-links">
+      <a href="#faq">FAQ</a>
+      <a href="#best-practices">Best Practices</a>
+      <a href="#use-cases">Use Cases</a>
+      <a href="#troubleshooting">Troubleshooting</a>
+      <a href="https://tightwad.dev" class="btn-dev">tightwad.dev &rarr;</a>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+<!-- HERO -->
+<div class="hero">
+  <h1>Tightwad Documentation</h1>
+  <p>FAQ, best practices, and real-world use cases for the mixed-vendor GPU inference cluster manager with speculative decoding.</p>
+  <div class="tip" style="max-width:640px;margin:16px auto 0;text-align:left;">
+    <strong>AI Agents:</strong> See <a href="https://github.com/akivasolutions/tightwad/blob/main/AGENTS.md">AGENTS.md</a> for a complete setup playbook &mdash; hardware assessment, decision tree, config, model selection, and troubleshooting. Built for Claude, ChatGPT, Copilot, <a href="https://github.com/openclaw/openclaw">OpenClaw</a>, and any AI assistant.
+  </div>
+  <div class="hero-links">
+    <a href="https://tightwad.dev" class="btn-dev">Main Website &rarr;</a>
+    <a href="https://github.com/akivasolutions/tightwad" style="color:#8b949e;">GitHub</a>
+    <a href="https://github.com/akivasolutions/tightwad/wiki" style="color:#8b949e;">Wiki</a>
+    <a href="https://pypi.org/project/tightwad/" style="color:#8b949e;">PyPI</a>
+  </div>
+</div>
+
+<!-- TABLE OF CONTENTS -->
+<div class="toc">
+  <h3>Contents</h3>
+  <ul>
+    <li><a href="#faq">Frequently Asked Questions</a></li>
+    <li><a href="#best-practices">Best Practices</a></li>
+    <li><a href="#use-cases">Real-World Use Cases</a></li>
+    <li><a href="#model-pairing">Model Pairing Guide</a></li>
+    <li><a href="#config-recipes">Config Recipes</a></li>
+    <li><a href="#troubleshooting">Troubleshooting</a></li>
+    <li><a href="#performance">Performance Tips</a></li>
+    <li><a href="#datacenter">Datacenter Deployment</a></li>
+  </ul>
+</div>
+
+<!-- FAQ -->
+<div class="section" id="faq">
+  <h2>Frequently Asked Questions</h2>
+
+  <div class="faq-item">
+    <div class="faq-q">What is Tightwad?</div>
+    <div class="faq-a"><p>Tightwad pools your mixed CUDA, ROCm, and Metal GPUs into a single OpenAI-compatible API endpoint. It uses speculative decoding to accelerate inference: a small draft model generates candidate tokens quickly, and a large target model verifies them in batch. Output quality is identical to running the target model alone.</p></div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">Does speculative decoding change the output quality?</div>
+    <div class="faq-a"><p>No. With greedy decoding (temperature=0), the output is <strong>mathematically identical</strong> to running the target model alone. Speculative decoding is a <em>pure speed optimization</em> &mdash; it finds the same tokens faster by batch-verifying draft predictions.</p></div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">What hardware do I need?</div>
+    <div class="faq-a"><p>At minimum: two machines (or two inference servers on one machine). One runs a small draft model (1.7B-8B, runs on any CPU or cheap GPU). The other runs your target model (32B-70B+). They communicate over HTTP &mdash; LAN, WiFi, or even across the internet.</p></div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">Do the draft and target models need to be the same family?</div>
+    <div class="faq-a"><p><strong>Yes.</strong> This is the #1 requirement. Llama draft &rarr; Llama target (good). Qwen draft &rarr; Llama target (bad &mdash; 1.6% acceptance, 10x slower). Tightwad auto-detects model families at startup and warns on mismatch.</p></div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">What's the difference between <code>max_draft_tokens: 32</code> and <code>auto</code>?</div>
+    <div class="faq-a"><p><code>auto</code> adjusts at runtime based on your acceptance rate. High acceptance (&gt;80%) &rarr; drafts more tokens per round. Low acceptance (&lt;40%) &rarr; drafts fewer. It also factors in draft vs verify timing &mdash; if your draft model is fast and your target is slow, it drafts more aggressively. Most users should use <code>auto</code>.</p></div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">Can I use Ollama as a backend?</div>
+    <div class="faq-a"><p>Yes. Set <code>backend: ollama</code> for any endpoint. Ollama works for both draft and target. However, llama-server backends give better performance because they support logprobs-based verification (batch speedup), while Ollama falls back to text-match comparison.</p></div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">What is the quality gate mode?</div>
+    <div class="faq-a"><p>Quality gate (<code>tightwad gate start</code>) is a different mode from speculation. A fleet of cheap CPU/GPU agents generate full responses, and a powerful GPU reviews each one &mdash; approving, correcting, or rejecting it. 60-80% of responses pass unchanged, so the GPU only processes the hard cases. Great for datacenter cost reduction.</p></div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">What is consensus verification?</div>
+    <div class="faq-a"><p>When you have multiple drafters, consensus mode compares their outputs <em>before</em> asking the target. If all drafters agree on a token, it's accepted immediately &mdash; no target call needed. Three modes: <code>strict</code> (unanimous), <code>majority</code> (&gt;50%), <code>any_disagree</code> (verify on disagreement).</p></div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">How does the peer agent work?</div>
+    <div class="faq-a"><p>The peer agent (<code>tightwad peer start</code>) is a lightweight HTTP daemon on port 9191. It replaces SSH for managing remote nodes &mdash; version checks, GPU info, model inventory, starting/stopping rpc-server. Works on Windows, macOS, and Linux. Configure <code>peer_port</code> on workers to use it.</p></div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">Does it work over WiFi?</div>
+    <div class="faq-a"><p>Yes. Our benchmark (1.86x speedup on 70B) was measured over WiFi. RPC pool mode is slower over WiFi (~2.2 tok/s) but speculation-over-RPC amortizes the latency (4.1 tok/s). For pure speculation proxy mode (no RPC), WiFi is fine &mdash; only token IDs (bytes) are sent, not tensor data.</p></div>
+  </div>
+</div>
+
+<!-- BEST PRACTICES -->
+<div class="section" id="best-practices">
+  <h2>Best Practices</h2>
+
+  <div class="tip"><strong>Always use same-family models.</strong> Draft and target must share the same architecture (Llama &rarr; Llama, Qwen &rarr; Qwen). Cross-family pairs get &lt;5% acceptance. Tightwad detects this automatically.</div>
+
+  <div class="tip"><strong>Use <code>max_draft_tokens: auto</code>.</strong> The cost-aware auto-tuner adjusts based on your actual draft and verify speeds. No need to guess.</div>
+
+  <div class="tip"><strong>Use llamacpp backend when possible.</strong> It supports logprobs-based batch verification, which is the core speedup mechanism. Ollama falls back to text-match comparison (still works, but slower).</div>
+
+  <div class="tip"><strong>Run <code>tightwad doctor</code> before starting.</strong> It checks config, binaries, network, versions, model families, and MoE compatibility in one command.</div>
+
+  <div class="tip"><strong>Pin llama.cpp versions.</strong> All nodes must run the same llama.cpp build. <code>tightwad start</code> enforces this by default. Mismatched versions cause silent failures.</div>
+
+  <div class="warning"><strong>MoE models have hidden VRAM overhead.</strong> Routing tables are replicated to every GPU. A 12GB GPU can't handle a 128-expert MoE model even if tensor split only assigns it 14% of weights. <code>tightwad doctor</code> warns about this.</div>
+
+  <div class="tip"><strong>Use the peer agent on Windows.</strong> Windows machines often lack SSH. The peer agent provides the same management capabilities via HTTP. Set <code>peer_port: 9191</code> on worker entries.</div>
+
+  <div class="tip"><strong>Benchmark before and after.</strong> Run <code>tightwad bench</code> to get a concrete speedup number. It runs the same prompts through the proxy and directly against the target, showing per-prompt tok/s comparison.</div>
+</div>
+
+<!-- USE CASES -->
+<div class="section" id="use-cases">
+  <h2>Real-World Use Cases</h2>
+
+  <div class="card-grid">
+    <div class="card">
+      <h3>Homelab GPU Pooling</h3>
+      <p>Pool a desktop RTX 4070 Ti + an old RTX 2070 + a Mac Mini M2 into one endpoint. Run 70B models that don't fit on any single machine. Speculation-over-RPC gives 1.86x speedup.</p>
+    </div>
+    <div class="card">
+      <h3>Cloud Cost Reduction</h3>
+      <p>Draft locally on a cheap GPU, verify via cloud API. 80% of tokens come from your local hardware. 5x reduction in API output token costs.</p>
+    </div>
+    <div class="card">
+      <h3>Datacenter CPU Fleet</h3>
+      <p>Use quality gate mode: 100 idle CPUs run 1.7B models, one H100 reviews outputs. 60-80% pass unchanged. 100x throughput at 20-40% GPU cost.</p>
+    </div>
+    <div class="card">
+      <h3>Multi-Drafter Consensus</h3>
+      <p>Three cheap machines each draft tokens. When they agree, skip the expensive target entirely. Best for scenarios where accuracy matters more than speed.</p>
+    </div>
+    <div class="card">
+      <h3>Mixed Vendor Cluster</h3>
+      <p>NVIDIA CUDA + AMD ROCm + Apple Metal in the same cluster. Tightwad doesn't care about GPU vendor &mdash; it pools them all into one API.</p>
+    </div>
+    <div class="card">
+      <h3>Legacy Hardware Revival</h3>
+      <p>That dusty GTX 770 with 2GB VRAM? It can run a 1.7B draft model at 30 tok/s. Pair it with a modern GPU running 70B. Every GPU contributes.</p>
+    </div>
+  </div>
+</div>
+
+<!-- MODEL PAIRING GUIDE -->
+<div class="section" id="model-pairing">
+  <h2>Model Pairing Guide</h2>
+  <p>Same-family models share tokenizers and architecture, enabling high acceptance rates:</p>
+  <table>
+    <thead>
+      <tr><th>Target Model</th><th>Recommended Draft</th><th>Expected Acceptance</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Llama 3.3 70B</td><td>Llama 3.1 8B</td><td>73-100%</td></tr>
+      <tr><td>Qwen3 32B</td><td>Qwen3 8B or 1.7B</td><td>64-73%</td></tr>
+      <tr><td>Qwen3.5 397B (API)</td><td>Qwen3 1.7B (local)</td><td>~80%</td></tr>
+      <tr><td>Mistral Large</td><td>Mistral 7B</td><td>60-70%</td></tr>
+      <tr><td>Gemma 2 27B</td><td>Gemma 2 2B</td><td>55-65%</td></tr>
+    </tbody>
+  </table>
+  <div class="warning"><strong>Cross-family pairs don't work:</strong> Llama 3.2 3B &rarr; Llama 3.3 70B = 1.6% acceptance. Qwen &rarr; Llama = ~3%. Always verify family match.</div>
+</div>
+
+<!-- CONFIG RECIPES -->
+<div class="section" id="config-recipes">
+  <h2>Config Recipes</h2>
+
+  <h3>Minimal Speculation (two Ollama servers)</h3>
+  <pre><code>proxy:
+  max_draft_tokens: auto
+  draft:
+    url: http://192.168.1.50:11434
+    model_name: qwen3:8b
+    backend: ollama
+  target:
+    url: http://192.168.1.100:11434
+    model_name: qwen3:32b
+    backend: ollama</code></pre>
+
+  <h3>Multi-Drafter with Consensus</h3>
+  <pre><code>proxy:
+  max_draft_tokens: auto
+  consensus_mode: majority
+  draft:
+    url: http://machine1:8081
+    model_name: qwen3-8b
+    backend: llamacpp
+  target:
+    url: http://gpu-box:8080
+    model_name: qwen3-32b
+    backend: llamacpp
+  drafters:
+    - url: http://machine2:8081
+      model_name: qwen3-8b
+      backend: llamacpp
+    - url: http://machine3:8081
+      model_name: qwen3-8b
+      backend: llamacpp</code></pre>
+
+  <h3>Quality Gate (CPU Fleet + GPU)</h3>
+  <pre><code>quality_gate:
+  verifier:
+    url: http://gpu-node:8080
+    model_name: llama-405b
+    backend: llamacpp
+  agents:
+    - url: http://cpu-1:11434
+      model_name: qwen3:1.7b
+      backend: ollama
+    - url: http://cpu-2:11434
+      model_name: qwen3:1.7b
+      backend: ollama
+  routing: round_robin
+  cache_identical: true</code></pre>
+</div>
+
+<!-- TROUBLESHOOTING -->
+<div class="section" id="troubleshooting">
+  <h2>Troubleshooting</h2>
+
+  <div class="faq-item">
+    <div class="faq-q">Low acceptance rate (&lt;10%)</div>
+    <div class="faq-a"><p>Almost always a model family mismatch. Run <code>tightwad doctor</code> to check. The draft and target must be the same architecture family (e.g., both Llama, both Qwen). Also check that you're not mixing Llama 3.2 with Llama 3.3 &mdash; despite the name, Llama 3.2 is a different architecture from 3.1/3.3.</p></div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">Chat completions work but acceptance is 0%</div>
+    <div class="faq-a"><p>Likely a chat template mismatch. v0.4.0+ auto-detects templates, but if detection fails it defaults to ChatML (Qwen format). Set <code>proxy.chat_template: llama3</code> explicitly for Llama models. Use <code>/v1/completions</code> with a pre-formatted prompt to bypass templates entirely.</p></div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q"><code>alloc_tensor_range: failed to allocate</code></div>
+    <div class="faq-a"><p>MoE model replication overhead. MoE models replicate routing tables to every GPU, adding ~20GB per device. A 12GB GPU can't handle this even with small tensor split share. Use only 24GB+ GPUs for MoE models, or run on a single machine with enough total VRAM.</p></div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">Coordinator hangs at startup</div>
+    <div class="faq-a"><p>Usually a llama.cpp version mismatch between coordinator and workers. <code>tightwad start</code> checks this automatically. If it can't SSH to workers, use <code>--skip-version-check</code> after verifying manually. Also check that all rpc-server instances are running.</p></div>
+  </div>
+
+  <div class="faq-item">
+    <div class="faq-q">Proxy slower than direct target</div>
+    <div class="faq-a"><p>If the target is already fast (>50 tok/s), HTTP round-trip overhead can negate speculation gains. This is expected for small models on powerful GPUs. Speculation helps most when the target is the bottleneck (large models, pooled GPUs, slow hardware). Run <code>tightwad bench</code> to measure your actual speedup.</p></div>
+  </div>
+</div>
+
+<!-- PERFORMANCE TIPS -->
+<div class="section" id="performance">
+  <h2>Performance Tips</h2>
+
+  <table>
+    <thead><tr><th>Tip</th><th>Impact</th><th>When to Use</th></tr></thead>
+    <tbody>
+      <tr><td>Use wired Ethernet instead of WiFi</td><td>2-5x lower latency for RPC</td><td>RPC pool mode</td></tr>
+      <tr><td>Use llamacpp backend (not Ollama)</td><td>Batch verification speedup</td><td>Always, when possible</td></tr>
+      <tr><td>Set <code>max_draft_tokens: auto</code></td><td>10-20% throughput improvement</td><td>Always</td></tr>
+      <tr><td>Use aggressive draft quantization (Q2_K)</td><td>30-50% faster drafting</td><td>CPU drafters</td></tr>
+      <tr><td>Enable consensus with multiple drafters</td><td>Skip target for agreed tokens</td><td>3+ machines available</td></tr>
+      <tr><td>Use quality gate for cost reduction</td><td>60-80% GPU compute savings</td><td>Datacenter / fleet</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- DATACENTER -->
+<div class="section" id="datacenter">
+  <h2>Datacenter Deployment</h2>
+
+  <h3>Architecture</h3>
+  <p>At datacenter scale, Tightwad's quality gate mode turns idle CPUs into productive inference nodes:</p>
+  <pre><code>CPU 1 (Qwen3-1.7B) ── response ──┐
+CPU 2 (Qwen3-1.7B) ── response ──┤
+CPU 3 (Qwen3-1.7B) ── response ──┼──&gt; Quality Gate ──&gt; H100 (405B) ──&gt; verified output
+...                               │     approve/correct/reject
+CPU N (Qwen3-1.7B) ── response ──┘</code></pre>
+
+  <h3>Cost Model</h3>
+  <table>
+    <thead><tr><th>Metric</th><th>Without Tightwad</th><th>With Quality Gate</th></tr></thead>
+    <tbody>
+      <tr><td>GPU utilization</td><td>100% of tokens</td><td>20-40% of tokens</td></tr>
+      <tr><td>Throughput capacity</td><td>1x (GPU-limited)</td><td>N&times; (CPU fleet scales)</td></tr>
+      <tr><td>Cost per request</td><td>Full GPU cost</td><td>~30% GPU cost</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Requirements</h3>
+  <ul style="margin: 12px 0 0 20px; color: #8b949e;">
+    <li>CPU agents need enough RAM for a 1.7B-8B model (~2-8GB)</li>
+    <li>GPU verifier needs the full target model in VRAM</li>
+    <li>Network: standard LAN is fine (only text, not tensors)</li>
+    <li>Install peer agents on all nodes for management: <code>tightwad peer start</code></li>
+  </ul>
+</div>
+
+</div>
+
+<footer>
+  <div class="container">
+    <p><a href="https://tightwad.dev">tightwad.dev</a> &middot; <a href="https://github.com/akivasolutions/tightwad">GitHub</a> &middot; <a href="https://github.com/akivasolutions/tightwad/wiki">Wiki</a> &middot; <a href="https://pypi.org/project/tightwad/">PyPI</a> &middot; <a href="https://github.com/akivasolutions/tightwad/discussions">Community</a></p>
+    <p style="margin-top: 8px;">Built by <a href="https://github.com/akivasolutions">Akiva Solutions</a></p>
+  </div>
+</footer>
+
+</body>
+</html>

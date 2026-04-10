@@ -1,0 +1,169 @@
+{
+  "config": {
+    "draft_model": "Meta-Llama-3.1-8B-Instruct",
+    "target_model": "meta-llama/llama-3.1-405b-instruct",
+    "max_tokens": 256,
+    "max_draft_tokens": 32,
+    "method": "multi-round spec decoding, whitespace-normalized text-match"
+  },
+  "results": [
+    {
+      "category": "reasoning",
+      "prompt": "What is 17 * 24? Show your work step by step.",
+      "baseline_time": 19.104073708003853,
+      "baseline_words": 55,
+      "spec_time": 23.57445374998497,
+      "spec_words": 58,
+      "rounds": 4,
+      "drafted_chars": 226,
+      "accepted_chars": 53,
+      "acceptance_pct": 23.5
+    },
+    {
+      "category": "reasoning",
+      "prompt": "If a train travels 120 miles in 2 hours, and then 180 miles ",
+      "baseline_time": 5.953657583973836,
+      "baseline_words": 75,
+      "spec_time": 18.16017870901851,
+      "spec_words": 90,
+      "rounds": 5,
+      "drafted_chars": 432,
+      "accepted_chars": 160,
+      "acceptance_pct": 37.0
+    },
+    {
+      "category": "code",
+      "prompt": "Write a Python function that checks if a number is prime. In",
+      "baseline_time": 40.57067266700324,
+      "baseline_words": 162,
+      "spec_time": 83.69507487496594,
+      "spec_words": 268,
+      "rounds": 13,
+      "drafted_chars": 1507,
+      "accepted_chars": 568,
+      "acceptance_pct": 37.7
+    },
+    {
+      "category": "factual",
+      "prompt": "What is the capital of France and what is its population?",
+      "baseline_time": 10.236157957988326,
+      "baseline_words": 52,
+      "spec_time": 18.206390291976277,
+      "spec_words": 49,
+      "rounds": 3,
+      "drafted_chars": 217,
+      "accepted_chars": 46,
+      "acceptance_pct": 21.2
+    },
+    {
+      "category": "factual",
+      "prompt": "Explain the three laws of thermodynamics in simple terms.",
+      "baseline_time": 20.523971166985575,
+      "baseline_words": 194,
+      "spec_time": 7.3955645830137655,
+      "spec_words": 0,
+      "rounds": 0,
+      "drafted_chars": 0,
+      "accepted_chars": 0,
+      "acceptance_pct": 0
+    },
+    {
+      "category": "factual",
+      "prompt": "What are the key differences between TCP and UDP?",
+      "baseline_time": 28.64079174998915,
+      "baseline_words": 180,
+      "spec_time": 41.49756779195741,
+      "spec_words": 97,
+      "rounds": 4,
+      "drafted_chars": 672,
+      "accepted_chars": 112,
+      "acceptance_pct": 16.7
+    },
+    {
+      "category": "list",
+      "prompt": "List the 10 largest countries by area.",
+      "baseline_time": 27.908752209041268,
+      "baseline_words": 105,
+      "spec_time": 83.91550408297917,
+      "spec_words": 270,
+      "rounds": 15,
+      "drafted_chars": 1158,
+      "accepted_chars": 253,
+      "acceptance_pct": 21.8
+    },
+    {
+      "category": "list",
+      "prompt": "Name 5 programming languages and one strength of each.",
+      "baseline_time": 34.25259595899843,
+      "baseline_words": 199,
+      "spec_time": 72.37209704203997,
+      "spec_words": 279,
+      "rounds": 11,
+      "drafted_chars": 1817,
+      "accepted_chars": 162,
+      "acceptance_pct": 8.9
+    },
+    {
+      "category": "creative",
+      "prompt": "Write a haiku about artificial intelligence.",
+      "baseline_time": 2.8614623330067843,
+      "baseline_words": 10,
+      "spec_time": 3.350945833954029,
+      "spec_words": 10,
+      "rounds": 2,
+      "drafted_chars": 119,
+      "accepted_chars": 0,
+      "acceptance_pct": 0.0
+    },
+    {
+      "category": "creative",
+      "prompt": "Write a one-paragraph story about a robot learning to cook.",
+      "baseline_time": 7.232347832992673,
+      "baseline_words": 138,
+      "spec_time": 60.32324320898624,
+      "spec_words": 258,
+      "rounds": 11,
+      "drafted_chars": 1413,
+      "accepted_chars": 88,
+      "acceptance_pct": 6.2
+    },
+    {
+      "category": "reasoning",
+      "prompt": "A farmer has 17 sheep. All but 9 die. How many sheep does th",
+      "baseline_time": 2.9737507500103675,
+      "baseline_words": 49,
+      "spec_time": 11.784471458988264,
+      "spec_words": 48,
+      "rounds": 3,
+      "drafted_chars": 209,
+      "accepted_chars": 23,
+      "acceptance_pct": 11.0
+    }
+  ],
+  "summary": {
+    "overall_acceptance_pct": 18.9,
+    "total_prompts": 11,
+    "categories": {
+      "reasoning": {
+        "acceptance_pct": 23.8,
+        "rounds": 3
+      },
+      "code": {
+        "acceptance_pct": 37.7,
+        "rounds": 1
+      },
+      "factual": {
+        "acceptance_pct": 12.6,
+        "rounds": 3
+      },
+      "list": {
+        "acceptance_pct": 15.4,
+        "rounds": 2
+      },
+      "creative": {
+        "acceptance_pct": 3.1,
+        "rounds": 2
+      }
+    }
+  }
+}

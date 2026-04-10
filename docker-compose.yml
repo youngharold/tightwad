@@ -1,0 +1,27 @@
+services:
+  proxy:
+    build: .
+    restart: unless-stopped
+    # network_mode: host gives direct LAN access (Linux only).
+    # On Mac/Docker Desktop, comment out network_mode and uncomment ports below.
+    # Use host.docker.internal instead of LAN IPs for draft/target URLs on Mac.
+    network_mode: host
+    # ports:
+    #   - "8088:8088"
+    environment:
+      TIGHTWAD_DRAFT_URL: "http://192.168.1.10:11434"
+      TIGHTWAD_DRAFT_MODEL: "qwen3:8b"
+      TIGHTWAD_DRAFT_BACKEND: "ollama"
+      TIGHTWAD_TARGET_URL: "http://192.168.1.20:11434"
+      TIGHTWAD_TARGET_MODEL: "qwen3:32b"
+      TIGHTWAD_TARGET_BACKEND: "ollama"
+      TIGHTWAD_PORT: "8088"
+      TIGHTWAD_MAX_DRAFT_TOKENS: "32"
+    volumes:
+      - ./logs:/root/.tightwad/logs    # persist proxy logs across restarts
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://127.0.0.1:8088/v1/models', timeout=5).raise_for_status()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s

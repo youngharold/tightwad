@@ -1,0 +1,94 @@
+# Tightwad cluster config — Unraid as coordinator
+#
+# Why Unraid? The coordinator must mmap the full GGUF into system RAM.
+# Unraid has 128 GB RAM, enough for any model (Llama 3.3 70B Q4_K_M ≈ 40 GB).
+# Its P400 (2 GB VRAM) gets zero layers via tensor-split but must be listed
+# because llama-server detects it as CUDA device 0.
+#
+# All real GPU work goes to RPC workers over the LAN.
+#
+# Draft model: Llama 3.1 8B (same architecture as Llama 3.3 70B = 100% acceptance rate)
+# NOTE: Llama 3.2 3B does NOT work — different architecture, 1.6% acceptance.
+
+coordinator:
+  host: 0.0.0.0
+  port: 8080
+  backend: cuda
+  gpus:
+    # P400 gets zero layers — listed so tensor-split array matches CUDA device count
+    - name: "Quadro P400"
+      vram_gb: 0
+
+workers:
+  - host: 192.168.1.100   # Main Desktop (4070 + 3060)
+    ssh_user: youruser
+    model_dir: "C:/Users/youruser/models"
+    gpus:
+      - name: "RTX 4070 Ti Super"
+        vram_gb: 16
+        rpc_port: 50052
+      - name: "RTX 3060"
+        vram_gb: 12
+        rpc_port: 50053
+
+  - host: 192.168.1.101  # XPS Desktop (2070)
+    ssh_user: youruser
+    model_dir: "C:/Users/youruser/models"
+    gpus:
+      - name: "RTX 2070"
+        vram_gb: 8
+        rpc_port: 50052
+
+  - host: 192.168.1.102   # MacBook Air M2 (Metal)
+    ssh_user: youruser
+    model_dir: ~/models
+    gpus:
+      - name: "Apple M2 Metal"
+        vram_gb: 16
+        rpc_port: 50052
+
+  # Uncomment when 7900 XTX rig is operational:
+  # - host: 192.168.1.XXX   # Linux 7900 XTX rig
+  #   ssh_user: youruser
+  #   model_dir: /models
+  #   gpus:
+  #     - name: "RX 7900 XTX 0"
+  #       vram_gb: 24
+  #       rpc_port: 50052
+  #     - name: "RX 7900 XTX 1"
+  #       vram_gb: 24
+  #       rpc_port: 50053
+
+models:
+  llama-3.3-70b:
+    path: /mnt/user/models/Llama-3.3-70B-Instruct-Q4_K_M.gguf
+    ctx_size: 8192
+    predict: 4096
+    flash_attn: true
+    default: true
+
+  deepseek-r1-70b:
+    path: /mnt/user/models/DeepSeek-R1-Distill-Qwen-70B-Q4_K_M.gguf
+    ctx_size: 8192
+    predict: 4096
+    flash_attn: true
+
+# Speculative decoding: Llama 3.1 8B drafts, Llama 3.3 70B verifies
+# Same architecture = 100% acceptance rate + logprobs verification works
+proxy:
+  host: 0.0.0.0
+  port: 8088
+  max_draft_tokens: 32
+  fallback_on_draft_failure: true
+  draft:
+    url: http://127.0.0.1:8081     # Llama 3.1 8B on Unraid (128GB RAM)
+    model_name: llama-3.1-8b
+    backend: llamacpp
+  target:
+    url: http://127.0.0.1:8080     # Coordinator URL (same machine)
+    model_name: llama-3.3-70b
+    backend: llamacpp
+
+binaries:
+  coordinator: /usr/local/bin/llama-server
+  rpc_server: rpc-server

@@ -1,0 +1,71 @@
+# Combined mode — speculation OVER a GPU pool (the killer feature)
+# When a model doesn't fit on one machine, pool the GPUs AND
+# speculate on top. The pool is slow (3 tok/s over WiFi), but
+# batch verification amortizes the RPC overhead.
+#
+# Use case: Run a 70B model across 4 machines, then speed it up
+# with a tiny draft model on a 5th machine.
+
+coordinator:
+  host: 192.168.1.10
+  port: 8080
+  binary: /usr/local/bin/llama-server
+
+workers:
+  - name: desktop-gpu1
+    host: 192.168.1.10
+    port: 50052
+    gpu:
+      vendor: nvidia
+      model: RTX 4070 Ti Super
+      vram_gb: 16
+
+  - name: desktop-gpu2
+    host: 192.168.1.10
+    port: 50053
+    gpu:
+      vendor: nvidia
+      model: RTX 3060
+      vram_gb: 12
+
+  - name: laptop
+    host: 192.168.1.20
+    port: 50052
+    gpu:
+      vendor: nvidia
+      model: RTX 2070
+      vram_gb: 8
+
+  - name: amd-box
+    host: 192.168.1.30
+    port: 50052
+    gpu:
+      vendor: amd
+      model: RX 7900 XTX
+      vram_gb: 24
+
+models:
+  default: llama-70b
+  llama-70b:
+    name: Llama 3.3 70B
+    path: /models/llama-3.3-70b-instruct-Q4_K_M.gguf
+    tensor_split: "16,12,8,24"
+
+# Speculative decoding on top of the pool
+proxy:
+  host: 0.0.0.0
+  port: 8088
+
+  # Draft on any cheap hardware — even a Raspberry Pi
+  draft:
+    url: http://192.168.1.50:11434
+    model_name: llama3.2:1b
+    backend: ollama
+
+  # Target is the coordinator (which distributes across the pool)
+  target:
+    url: http://192.168.1.10:8080
+    model_name: llama-70b
+    backend: llamacpp
+
+  max_draft_tokens: 32

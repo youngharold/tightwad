@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tightwad"
+version = "0.4.2"
+description = "Mixed-vendor GPU inference cluster manager with speculative decoding"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [{name = "Akiva Solutions"}]
+keywords = ["llm", "inference", "speculative-decoding", "gpu", "cluster", "mixed-vendor"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "pyyaml>=6.0",
+    "rich>=13.0",
+    "click>=8.0",
+    "httpx[http2]>=0.25",
+    "starlette>=0.36",
+    "uvicorn>=0.27",
+]
+
+[project.urls]
+Homepage = "https://github.com/youngharold/tightwad"
+Repository = "https://github.com/youngharold/tightwad"
+Issues = "https://github.com/youngharold/tightwad/issues"
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "httpx[http2]>=0.25"]
+inspect = ["gguf>=0.10.0"]
+
+[project.scripts]
+tightwad = "tightwad.cli:cli"
+
+[tool.setuptools.packages.find]
+include = ["tightwad*"]

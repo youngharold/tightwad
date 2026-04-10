@@ -1,0 +1,181 @@
+{
+  "config": {
+    "draft_model": "Meta-Llama-3.1-8B-Instruct",
+    "target_model": "meta-llama/llama-3.1-70b-instruct",
+    "max_tokens": 256,
+    "max_draft_tokens": 32,
+    "method": "multi-round spec decoding, whitespace-normalized text-match"
+  },
+  "results": [
+    {
+      "category": "reasoning",
+      "prompt": "What is 17 * 24? Show your work step by step.",
+      "baseline_time": 2.5970264589996077,
+      "baseline_words": 51,
+      "spec_time": 13.790538500004914,
+      "spec_words": 61,
+      "rounds": 4,
+      "drafted_chars": 234,
+      "accepted_chars": 0,
+      "acceptance_pct": 0.0
+    },
+    {
+      "category": "reasoning",
+      "prompt": "If a train travels 120 miles in 2 hours, and then 180 miles ",
+      "baseline_time": 5.972065750043839,
+      "baseline_words": 123,
+      "spec_time": 13.734861750039272,
+      "spec_words": 100,
+      "rounds": 5,
+      "drafted_chars": 530,
+      "accepted_chars": 139,
+      "acceptance_pct": 26.2
+    },
+    {
+      "category": "code",
+      "prompt": "Write a Python function that checks if a number is prime. In",
+      "baseline_time": 8.076688874978572,
+      "baseline_words": 141,
+      "spec_time": 68.49159479199443,
+      "spec_words": 279,
+      "rounds": 15,
+      "drafted_chars": 1500,
+      "accepted_chars": 197,
+      "acceptance_pct": 13.1
+    },
+    {
+      "category": "code",
+      "prompt": "Write a Python function to reverse a linked list iteratively",
+      "baseline_time": 9.595891249948181,
+      "baseline_words": 136,
+      "spec_time": 52.354842374974396,
+      "spec_words": 277,
+      "rounds": 16,
+      "drafted_chars": 1870,
+      "accepted_chars": 102,
+      "acceptance_pct": 5.5
+    },
+    {
+      "category": "factual",
+      "prompt": "What is the capital of France and what is its population?",
+      "baseline_time": 2.440849042031914,
+      "baseline_words": 51,
+      "spec_time": 7.426807417010423,
+      "spec_words": 43,
+      "rounds": 3,
+      "drafted_chars": 264,
+      "accepted_chars": 44,
+      "acceptance_pct": 16.7
+    },
+    {
+      "category": "factual",
+      "prompt": "Explain the three laws of thermodynamics in simple terms.",
+      "baseline_time": 7.738896583963651,
+      "baseline_words": 204,
+      "spec_time": 38.37251891603228,
+      "spec_words": 256,
+      "rounds": 10,
+      "drafted_chars": 1602,
+      "accepted_chars": 0,
+      "acceptance_pct": 0.0
+    },
+    {
+      "category": "factual",
+      "prompt": "What are the key differences between TCP and UDP?",
+      "baseline_time": 9.154353582998738,
+      "baseline_words": 190,
+      "spec_time": 36.17646537499968,
+      "spec_words": 260,
+      "rounds": 11,
+      "drafted_chars": 1798,
+      "accepted_chars": 99,
+      "acceptance_pct": 5.5
+    },
+    {
+      "category": "list",
+      "prompt": "List the 10 largest countries by area.",
+      "baseline_time": 7.907116749964189,
+      "baseline_words": 95,
+      "spec_time": 29.87485241703689,
+      "spec_words": 77,
+      "rounds": 9,
+      "drafted_chars": 630,
+      "accepted_chars": 219,
+      "acceptance_pct": 34.8
+    },
+    {
+      "category": "list",
+      "prompt": "Name 5 programming languages and one strength of each.",
+      "baseline_time": 9.920649000036065,
+      "baseline_words": 205,
+      "spec_time": 34.4412391250371,
+      "spec_words": 267,
+      "rounds": 11,
+      "drafted_chars": 1869,
+      "accepted_chars": 256,
+      "acceptance_pct": 13.7
+    },
+    {
+      "category": "creative",
+      "prompt": "Write a haiku about artificial intelligence.",
+      "baseline_time": 1.2543292079935782,
+      "baseline_words": 17,
+      "spec_time": 4.331994541978929,
+      "spec_words": 17,
+      "rounds": 2,
+      "drafted_chars": 119,
+      "accepted_chars": 65,
+      "acceptance_pct": 54.6
+    },
+    {
+      "category": "creative",
+      "prompt": "Write a one-paragraph story about a robot learning to cook.",
+      "baseline_time": 7.618064625014085,
+      "baseline_words": 147,
+      "spec_time": 35.54856949998066,
+      "spec_words": 278,
+      "rounds": 12,
+      "drafted_chars": 1490,
+      "accepted_chars": 70,
+      "acceptance_pct": 4.7
+    },
+    {
+      "category": "reasoning",
+      "prompt": "A farmer has 17 sheep. All but 9 die. How many sheep does th",
+      "baseline_time": 2.1783572920248844,
+      "baseline_words": 23,
+      "spec_time": 2.374703625042457,
+      "spec_words": 18,
+      "rounds": 2,
+      "drafted_chars": 104,
+      "accepted_chars": 0,
+      "acceptance_pct": 0.0
+    }
+  ],
+  "summary": {
+    "overall_acceptance_pct": 9.9,
+    "total_prompts": 12,
+    "categories": {
+      "reasoning": {
+        "acceptance_pct": 8.7,
+        "count": 3
+      },
+      "code": {
+        "acceptance_pct": 9.3,
+        "count": 2
+      },
+      "factual": {
+        "acceptance_pct": 7.4,
+        "count": 3
+      },
+      "list": {
+        "acceptance_pct": 24.2,
+        "count": 2
+      },
+      "creative": {
+        "acceptance_pct": 29.7,
+        "count": 2
+      }
+    }
+  }
+}

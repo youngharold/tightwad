@@ -1,0 +1,30 @@
+# Minimal speculative decoding — 2 machines, simplest possible setup
+# One machine runs the big model, another runs the small model.
+# Tightwad's proxy sits in front and coordinates.
+#
+# Use case: You have two machines with Ollama. You want faster
+# inference without changing your chat UI.
+
+# No coordinator/workers needed — both servers are already running.
+# Just configure the proxy to sit between them.
+
+proxy:
+  host: 0.0.0.0
+  port: 8088
+
+  # Draft: small model on Machine A
+  draft:
+    url: http://192.168.1.10:11434
+    model_name: qwen3:1.7b
+    backend: ollama
+
+  # Target: big model on Machine B
+  target:
+    url: http://192.168.1.20:11434
+    model_name: qwen3:32b
+    backend: ollama
+
+  max_draft_tokens: 32
+
+# That's it. Point your chat UI at http://<this-machine>:8088
+# and you get speculative decoding. Same model, same output, faster.

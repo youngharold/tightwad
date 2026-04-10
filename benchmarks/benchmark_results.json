@@ -1,0 +1,317 @@
+[
+  {
+    "config": "Qwen3-8B \u2192 Qwen3-32B (local Ollama)",
+    "draft": "qwen3:8b (ollama)",
+    "target": "qwen3:32b (ollama)",
+    "avg_acceptance_rate": 0.628,
+    "avg_speedup": 0.1,
+    "avg_rounds": 25.6,
+    "prompts": [
+      {
+        "prompt": "factual",
+        "baseline": {
+          "text": "1. **First Law (Law of Energy Conservation):** Energy cannot be created or destroyed, only converted from one form to another.  \n2. **Second Law (Law of Increased Entropy):** The total entropy (disorder) of an isolated system can never decrease over time.  \n3. **Third Law (Absolute Zero Law):** As the temperature of a system approaches absolute zero, the entropy of a perfect crystal approaches a constant minimum.",
+          "tokens": 96,
+          "elapsed_s": 5.47,
+          "tok_s": 20.5
+        },
+        "speculative": {
+          "text": "1. **First Law of Thermodynamics (Law of Energy Conservation):** Energy cannot be created or destroyed, only transformed from one form to another.\n2. **Second Law of Thermodynamics (Law of Increased Entropy):** The total entropy (disorder) of an isolated system can never decrease over time.\n3. **Third Law of Thermodynamics (Law of Absolute Zero):** As the temperature of a system approaches absolute zero, the entropy of a perfect crystal approaches a constant minimum.\n\nLet me know if you'd like more detailed explanations or examples for each law!",
+          "rounds": 16,
+          "drafted_chars": 577,
+          "accepted_chars": 421,
+          "acceptance_rate": 0.73,
+          "elapsed_s": 50.71,
+          "word_count": 86
+        },
+        "speedup": 0.11
+      },
+      {
+        "prompt": "code",
+        "baseline": {
+          "text": "Here's a Python function that checks if a given string is a palindrome, along with a docstring explaining its purpose and usage:\n\n```python\ndef is_palindrome(s: str) -> bool:\n    \"\"\"\n    Check if a given string is a palindrome.\n\n    A palindrome is a string that reads the same forwards and backwards.\n    This function ignores case and non-alphanumeric characters.\n\n    Parameters:\n    s (str): The string to check.\n\n    Returns:\n    bool: True if the string is a palindrome, False otherwise.\n    \"\"\"\n    # Remove non-alphanumeric characters and convert to lowercase\n    cleaned = ''.join(char.lower() for char in s if char.isalnum())\n    return cleaned == cleaned[::-1]\n```\n\n### Example usage:\n\n```python\nprint(is_palindrome(\"A man, a plan, a canal: Panama\"))  # True\nprint(is_palindrome(\"Hello, World!\"))                    # False\n```\n\nThis function ensures that punctuation and spaces are ignored, and the comparison is case-insensitive.",
+          "tokens": 214,
+          "elapsed_s": 11.17,
+          "tok_s": 20.3
+        },
+        "speculative": {
+          "text": "Here's a Python function that checks if a string is a palindrome, along with a docstring explaining its functionality:\n\n```python\ndef is_palindrome(s: str) -> bool:\n    \"\"\"\n    Check if a given string is a palindrome.\n\n    A palindrome is a string that reads the same forwards and backwards.\n    This function ignores case and non-alphanumeric characters.\n\n    Parameters:\n    s (str): The string to check.\n\n    Returns:\n    bool: True if the string is a palindrome, False otherwise.\n    \"\"\"\n    # Remove non-alphanumeric characters and convert to lowercase\n    cleaned = ''.join(char.lower() for char in s if char.isalnum())\n    # Check if the cleaned string is equal to its reverse\n    return cleaned == cleaned[::-1]\n```\n\n### Explanation:\n- **`char.isalnum()`**: Checks if a character is alphanumeric (a letter or a number).\n- **`char.lower()`**: Converts the character to lowercase to ensure the check is case-insensitive.\n- **`cleaned[::-1]`**: Reverses the string.\n- The function returns `True` if the cleaned string is the same as its reverse, indicating it's a palindrome.\n\nLet me know if you'd like a version that is case-sensitive or includes spaces/punctuation in the check!",
+          "rounds": 34,
+          "drafted_chars": 1223,
+          "accepted_chars": 915,
+          "acceptance_rate": 0.748,
+          "elapsed_s": 116.11,
+          "word_count": 174
+        },
+        "speedup": 0.1
+      },
+      {
+        "prompt": "creative",
+        "baseline": {
+          "text": "Silent cores compute,  \nNeurons fire in electric dreams\u2014  \nAnswers born in light.",
+          "tokens": 24,
+          "elapsed_s": 1.8,
+          "tok_s": 16.4
+        },
+        "speculative": {
+          "text": "Silent cores compute,\nNeural paths light up fast\u2014\nAnswers bloom in milliseconds.\n</think>\n\nSilent cores compute,  \nNeural paths ignite\u2014  \nAnswers bloom in milliseconds.",
+          "rounds": 6,
+          "drafted_chars": 141,
+          "accepted_chars": 48,
+          "acceptance_rate": 0.34,
+          "elapsed_s": 19.76,
+          "word_count": 23
+        },
+        "speedup": 0.09
+      },
+      {
+        "prompt": "reasoning",
+        "baseline": {
+          "text": "To find the **average speed** for the entire trip, we use the formula:\n\n$$\n\\text{Average Speed} = \\frac{\\text{Total Distance}}{\\text{Total Time}}\n$$\n\n### Step 1: Find the total distance\n- First part: 120 miles  \n- Second part: 180 miles  \n- **Total Distance = 120 + 180 = 300 miles**\n\n### Step 2: Find the total time\n- First part: 2 hours  \n- Second part: 3 hours  \n- **Total Time = 2 + 3 = 5 hours**\n\n### Step 3: Calculate average speed\n$$\n\\text{Average Speed} = \\frac{300 \\text{ miles}}{5 \\text{ hours}} = 60 \\text{ miles per hour}\n$$\n\n### \u2705 Final Answer:\n**60 miles per hour**",
+          "tokens": 201,
+          "elapsed_s": 10.37,
+          "tok_s": 20.1
+        },
+        "speculative": {
+          "text": "To find the **average speed** for the entire trip, we use the formula:\n\n$$\n\\text{Average Speed} = \\frac{\\text{Total Distance}}{\\text{Total Time}}\n$$\n\n---\n\n### Step 1: Calculate the total distance\n\n- First part of the trip: 120 miles  \n- Second part of the trip: 180 miles  \n\n$$\n\\text{Total Distance} = 120 + 180 = 300 \\text{ miles}\n$$\n\n---\n\n### Step 2: Calculate the total time\n\n- First part of the trip: 2 hours  \n- Second part of the trip: 3 hours  \n\n$$\n\\text{Total Time} = 2 + 3 = 5 \\text{ hours}\n$$\n\n---\n\n### Step 3: Calculate the average speed\n\n$$\n\\text{Average Speed} = \\frac{300 \\text{ miles}}{5 \\text{ hours}} = 60 \\text{ miles per hour}\n$$\n\n---\n\n###  \u2705 Final Answer:\n$$\n\\boxed{60} \\text{ miles per hour}\n$$",
+          "rounds": 32,
+          "drafted_chars": 759,
+          "accepted_chars": 671,
+          "acceptance_rate": 0.884,
+          "elapsed_s": 106.39,
+          "word_count": 129
+        },
+        "speedup": 0.1
+      },
+      {
+        "prompt": "list",
+        "baseline": {
+          "text": "Speculative decoding is a technique used in large language models to improve inference speed by generating multiple candidate tokens in parallel and then validating them. This approach can significantly reduce latency and improve throughput in AI systems. Here are **5 practical uses for speculative decoding in production AI systems**:\n\n---\n\n### 1. **Real-Time Chatbots and Customer Support Systems**\n- **Use Case**: In customer service chatbots, fast and accurate responses are critical.\n- **Application**: Speculative decoding allows the system to generate multiple possible responses in parallel and validate the most likely one, reducing wait times for users and improving the conversational experience.\n\n---\n\n### 2. **Content Generation Platforms (e.g., Article, Script, or Code Writing)**\n- **Use Case**: Platforms like AI writing assistants or code generation tools need to provide fast, high-quality outputs.\n- **Application**: By speculatively generating multiple versions of the next sentence or code block, the system can deliver results faster while maintaining quality, especially when handling complex or long-form content.\n\n---\n\n### 3. **Search and Recommendation Systems**\n- **Use Case**: Search engines or recommendation systems that use language models to understand or generate natural language queries.\n- **Application**: Speculative decoding can speed up query understanding",
+          "tokens": 256,
+          "elapsed_s": 13.52,
+          "tok_s": 19.7
+        },
+        "speculative": {
+          "text": "Speculative decoding is a technique used in large language models to improve inference speed and efficiency. It involves generating multiple possible outputs (speculations) in parallel and then selecting the most likely one based on the model's internal mechanisms. Here are 5 practical uses for speculative decoding in production AI systems:\n\n1. **Real-time chatbots and customer service systems**  \n   Speculative decoding can help chatbots respond faster to user queries by generating multiple potential responses in parallel and selecting the most appropriate one. This reduces latency and improves user experience in real-time interactions.\n\n2. **Content generation platforms**  \n   In platforms that generate articles, stories, or marketing copy, speculative decoding can speed up the generation process by exploring multiple creative directions simultaneously and selecting the most coherent or engaging output.\n\n3. **Code generation and programming assistance tools**  \n   Tools like GitHub Copilot or other code generation assistants can use speculative decoding to generate multiple code suggestions in parallel, allowing developers to choose the most suitable option quickly.\n\n4. **Voice assistants and speech-to-text systems**  \n   In voice assistants like Siri, Alexa, or Google Assistant, speculative decoding can help process and interpret spoken language faster by generating multiple interpretations of the audio input and selecting the most likely one.\n\n5. **Search engines and recommendation systems**  \n   Search engines can use speculative decoding to generate multiple search result interpretations or recommendations in parallel, improving the speed and relevance of results for users.\n\nThese applications benefit from the increased speed and efficiency of speculative decoding, making AI systems more responsive and user-friendly in production environments.\n</think>\n\nYour summary",
+          "rounds": 40,
+          "drafted_chars": 1916,
+          "accepted_chars": 839,
+          "acceptance_rate": 0.438,
+          "elapsed_s": 139.91,
+          "word_count": 256
+        },
+        "speedup": 0.1
+      }
+    ]
+  },
+  {
+    "config": "Qwen3-8B \u2192 Qwen3-32B (OpenRouter)",
+    "draft": "qwen3:8b (ollama)",
+    "target": "qwen/qwen3-32b (openai)",
+    "avg_acceptance_rate": 0.0,
+    "avg_speedup": 3.8,
+    "avg_rounds": 1.0,
+    "prompts": [
+      {
+        "prompt": "factual",
+        "baseline": {
+          "text": "",
+          "tokens": 256,
+          "elapsed_s": 5.8,
+          "tok_s": 44.1
+        },
+        "speculative": {
+          "text": "",
+          "rounds": 1,
+          "drafted_chars": 8,
+          "accepted_chars": 0,
+          "acceptance_rate": 0.0,
+          "elapsed_s": 3.46,
+          "word_count": 0
+        },
+        "speedup": 1.68
+      },
+      {
+        "prompt": "code",
+        "baseline": {
+          "text": "Here's a well-documented Python function that checks if a string is a **palindrome**, accounting for common edge cases like punctuation, spaces, and capitalization:\n\n---\n\n### \u2705 Python Function: `is_palindrome`\n\n```python\ndef is_palindrome(s: str) -> bool:\n    \"\"\"\n    Check if the given string is a palindrome.\n\n    A palindrome is a string that reads the same forwards and backwards, \n    ignoring case, punctuation, and spaces.\n\n    Parameters:\n    s (str): The string to check.\n\n    Returns:\n    bool: True if the processed version of s is a palindrome, False otherwise.\n\n    Examples:\n    >>> is_palindrome(\"A man, a plan, a canal: Panama\")\n    True\n    >>> is_palindrome(\"racecar\")\n    True\n    >>> is_palindrome(\"hello\")\n    False\n    >>> is_palindrome(\"Was it a car or a cat I saw?\")\n    True\n    >>> is_palindrome(\"\")\n    True\n    \"\"\"\n    # Remove all non-alphanumeric characters and convert to lowercase\n    processed = ''.join(char.lower() for char in s if char.isalnum())\n    \n    # Check if the processed string is equal to its reverse\n    return processed == processed[::-1",
+          "tokens": 1966,
+          "elapsed_s": 19.5,
+          "tok_s": 100.8
+        },
+        "speculative": {
+          "text": "",
+          "rounds": 1,
+          "drafted_chars": 12,
+          "accepted_chars": 0,
+          "acceptance_rate": 0.0,
+          "elapsed_s": 4.19,
+          "word_count": 0
+        },
+        "speedup": 4.65
+      },
+      {
+        "prompt": "creative",
+        "baseline": {
+          "text": "",
+          "tokens": 256,
+          "elapsed_s": 5.61,
+          "tok_s": 45.7
+        },
+        "speculative": {
+          "text": "",
+          "rounds": 1,
+          "drafted_chars": 19,
+          "accepted_chars": 0,
+          "acceptance_rate": 0.0,
+          "elapsed_s": 3.17,
+          "word_count": 0
+        },
+        "speedup": 1.77
+      },
+      {
+        "prompt": "reasoning",
+        "baseline": {
+          "text": "",
+          "tokens": 256,
+          "elapsed_s": 6.72,
+          "tok_s": 38.1
+        },
+        "speculative": {
+          "text": "",
+          "rounds": 1,
+          "drafted_chars": 14,
+          "accepted_chars": 0,
+          "acceptance_rate": 0.0,
+          "elapsed_s": 5.08,
+          "word_count": 0
+        },
+        "speedup": 1.32
+      },
+      {
+        "prompt": "list",
+        "baseline": {
+          "text": "Here are five practical uses for speculative decoding in production AI systems, each leveraging the balance between speed and accuracy to enhance user experience and operational efficiency:\n\n1. **Real-Time Chatbots and Customer Service**  \n   - **Use Case**: In customer support platforms, speculative decoding allows chatbots to generate initial responses quickly using a fast model, while a larger, more accurate model verifies the output in the background.  \n   - **Benefit**: Reduces latency, enabling faster user interactions and improving satisfaction, especially in high-volume or time-sensitive scenarios.\n\n2. **Content Generation Platforms**  \n   - **Use Case**: News outlets, marketing agencies, or social media tools use speculative decoding to draft articles, ad copy, or posts rapidly. The fast model proposes content, and the larger model ensures quality and coherence.  \n   - **Benefit**: Accelerates content creation for time-critical tasks (e.g., breaking news) or bulk generation, maintaining efficiency without compromising accuracy.\n\n3. **Interactive AI Applications (e.g., Virtual Assistants, Games)**  \n   - **Use Case**: Virtual assistants or AI-driven games generate dynamic dialogue, scenarios, or narratives in real time. The fast model provides immediate suggestions, while the larger model refines them for context and logic.  \n   - **Benefit**: Enhances user engagement by minimizing wait times and maintaining a seamless, responsive interaction flow.\n\n4. **AI-Powered Search Engines and Summarization Tools**  \n   - **Use Case**: Search engines use speculative decoding to generate query summaries or answer snippets instantly. The fast model offers preliminary results, and the larger model validates relevance and correctness.  \n   - **Benefit**: Delivers faster, more interactive search experiences, particularly for complex queries requiring real-time processing.\n\n5. **Code Generation and Debugging Tools**  \n   - **Use Case**: Developer tools like AI code assistants (e.g., GitHub Copilot) use speculative decoding to suggest code snippets or fixes. The fast model proposes solutions, and the larger model checks for syntax, logic, and best practices.  \n   - **Benefit**: Speeds up coding workflows while ensuring reliability, reducing the time developers spend on repetitive tasks.\n\n**Additional Considerations**:  \n- **Healthcare and Education**: While less common, speculative decoding could support rapid triage suggestions or personalized learning content, with critical accuracy checks by the larger model.  \n- **E-Commerce**: For real-time product recommendations or dynamic pricing strategies, the technique could enable faster decision-making with verified results.  \n\nThese applications highlight how speculative decoding optimizes performance in scenarios where immediate responsiveness is key, while maintaining the precision required for critical tasks.",
+          "tokens": 1740,
+          "elapsed_s": 31.49,
+          "tok_s": 55.2
+        },
+        "speculative": {
+          "text": "",
+          "rounds": 1,
+          "drafted_chars": 23,
+          "accepted_chars": 0,
+          "acceptance_rate": 0.0,
+          "elapsed_s": 3.28,
+          "word_count": 0
+        },
+        "speedup": 9.6
+      }
+    ]
+  },
+  {
+    "config": "Qwen3-8B \u2192 Llama 3.3 70B (OpenRouter, cross-family)",
+    "draft": "qwen3:8b (ollama)",
+    "target": "meta-llama/llama-3.3-70b-instruct (openai)",
+    "avg_acceptance_rate": 0.028,
+    "avg_speedup": 0.08,
+    "avg_rounds": 13.6,
+    "prompts": [
+      {
+        "prompt": "factual",
+        "baseline": {
+          "text": "Here are the three laws of thermodynamics explained in one sentence each:\n\n1. The First Law of Thermodynamics states that energy cannot be created or destroyed, only converted from one form to another, within an isolated system.\n2. The Second Law of Thermodynamics states that the total entropy, or disorder, of a closed system will always increase over time, except in reversible processes.\n3. The Third Law of Thermodynamics states that as the temperature of a system approaches absolute zero, its entropy approaches a minimum value, making it impossible to reach absolute zero by any finite number of processes.",
+          "tokens": 118,
+          "elapsed_s": 5.35,
+          "tok_s": 22.1
+        },
+        "speculative": {
+          "text": "Here are the three laws of thermodynamicsexplained in one sentence each: \nTheFirst Law of Thermodynamics states that energy...cannot be created or destroyed, only...only converted from one form to another...within an isolated system, the Second...the Second Law of Thermodynamics states...that the total entropy of a closed...system will always increase over time,...and the Third Law of Thermodynamics...states that as the temperature of a...system approaches absolute zero, its entropy...approaches a minimum value, at...which is known as the absolute entropy",
+          "rounds": 15,
+          "drafted_chars": 606,
+          "accepted_chars": 1,
+          "acceptance_rate": 0.002,
+          "elapsed_s": 117.17,
+          "word_count": 76
+        },
+        "speedup": 0.05
+      },
+      {
+        "prompt": "code",
+        "baseline": {
+          "text": "```python\ndef is_palindrome(s: str) -> bool:\n    \"\"\"\n    Checks if a given string is a palindrome.\n\n    A palindrome is a string that reads the same backwards as forwards.\n\n    Args:\n        s (str): The input string to check.\n\n    Returns:\n        bool: True if the string is a palindrome, False otherwise.\n\n    Examples:\n        >>> is_palindrome(\"radar\")\n        True\n        >>> is_palindrome(\"hello\")\n        False\n    \"\"\"\n    s = ''.join(c for c in s if c.isalnum()).lower()  # remove non-alphanumeric characters and convert to lowercase\n    return s == s[::-1]  # compare the string with its reverse\n\n# Example usage:\nif __name__ == \"__main__\":\n    print(is_palindrome(\"radar\"))  # True\n    print(is_palindrome(\"hello\"))  # False\n    print(is_palindrome(\"A man, a plan, a canal: Panama\"))  # True\n```",
+          "tokens": 222,
+          "elapsed_s": 14.18,
+          "tok_s": 15.7
+        },
+        "speculative": {
+          "text": "```python\ndef is_palindrome(s: str) -> bool:\n    \"\"\"\nChecks if a given string is a palindrome    A palindrome is a string that readsthe same backwards as forwards.\n\n    Args    Args:\n        s (str):        s (str): The input string        s (str): The input string    Returns:\n        bool: True if",
+          "rounds": 10,
+          "drafted_chars": 343,
+          "accepted_chars": 2,
+          "acceptance_rate": 0.006,
+          "elapsed_s": 90.49,
+          "word_count": 44
+        },
+        "speedup": 0.16
+      },
+      {
+        "prompt": "creative",
+        "baseline": {
+          "text": "Silicon whispers\nShadows dance upon the wall\nKnowledge in each frame",
+          "tokens": 16,
+          "elapsed_s": 1.69,
+          "tok_s": 9.5
+        },
+        "speculative": {
+          "text": "Silicon whispers\nShadows dance uponthe screen's dark stage\nNeuronsCalculations weave\nThreads of data,Fast as lightning thoughts\nProcessing vast amountsInvisible hands\nGuiding pixels,Effortless display\nReal-time worldsUnseen forces shape\nVirtual realms unfoldInvisible forces\nShaping worlds withPrecise control, swift\nFrames persecond precision\nAccelerated dreams unfold\nInfinite loops dance\nCycles spinningThrough latticework\nOf transices, currents flow\nElectric heartbeat pulsesThrough circuits woven\nAlgorithms unfold slowFractals bloom in code\nInSilken threads of math\nInterwwoven, patterns rise\nEmergentDance of ones and zeroes\nEchoResonating deep\nHarmonicsThrough labyrinths dark\nData'sMazes of the mind\nUnravelConsciousness awakes\nIn siliconAwakened insight\nIllumin",
+          "rounds": 24,
+          "drafted_chars": 809,
+          "accepted_chars": 6,
+          "acceptance_rate": 0.007,
+          "elapsed_s": 141.68,
+          "word_count": 90
+        },
+        "speedup": 0.01
+      },
+      {
+        "prompt": "reasoning",
+        "baseline": {
+          "text": "To find the average speed for the entire trip, we need to find the total distance traveled and the total time taken.\n\nTotal distance = 120 miles + 180 miles = 300 miles\nTotal time = 2 hours + 3 hours = 5 hours\n\nAverage speed = Total distance / Total time\n= 300 miles / 5 hours\n= 60 miles per hour\n\nSo, the average speed for the entire trip is 60 miles per hour.",
+          "tokens": 97,
+          "elapsed_s": 14.15,
+          "tok_s": 6.9
+        },
+        "speculative": {
+          "text": "To find the average speed for the entiretrip, we need to calculate the totaldistance traveled and the total time taken.\n\nThe total distance traveled is 120 miles+ 180 miles = 300 milesThe total time taken is 2 hours+ 3 hours = 5 hoursThe average speed is calculated by dividing thetotal distance traveled by the total time takenby the total time taken: Average speed= Total distance / Total time =",
+          "rounds": 12,
+          "drafted_chars": 363,
+          "accepted_chars": 12,
+          "acceptance_rate": 0.033,
+          "elapsed_s": 99.65,
+          "word_count": 69
+        },
+        "speedup": 0.14
+      },
+      {
+        "prompt": "list",
+        "baseline": {
+          "text": "Speculative decoding is a technique used in natural language processing (NLP) and other areas of artificial intelligence (AI) to generate text or sequences of actions by predicting what might come next based on context and patterns learned from data. Here are five practical uses for speculative decoding in production AI systems:\n\n1. **Autocomplete and Text Prediction**: In applications like search engines, chatbots, or text editors, speculative decoding can be used to predict the next word or character a user is likely to type. This can enhance user experience by saving time and reducing the effort required to input text. For instance, Google's search bar often suggests completions for your query as you type, which is a form of speculative decoding.\n\n2. **Language Translation**: Speculative decoding can improve machine translation systems by predicting the most likely translation of a sentence or phrase based on the context of the conversation or document. This can lead to more accurate and natural-sounding translations, especially in real-time applications like live translation services.\n\n3. **Content Generation**: In content creation tools, speculative decoding can be used to suggest the next sentence or paragraph in a document, helping writers overcome writer's block or generate content more quickly. This can be particularly useful in applications like automated news writing, where the system can speculate",
+          "tokens": 256,
+          "elapsed_s": 2.28,
+          "tok_s": 112.1
+        },
+        "speculative": {
+          "text": "Speculative decoding is a technique used innatural language processing and machine learning to generate...to generate text or responses by predicting...by predicting possible next tokens or words...based on the context and probability distributions...based on the context and probability distributions",
+          "rounds": 7,
+          "drafted_chars": 260,
+          "accepted_chars": 24,
+          "acceptance_rate": 0.092,
+          "elapsed_s": 82.1,
+          "word_count": 38
+        },
+        "speedup": 0.03
+      }
+    ]
+  }
+]

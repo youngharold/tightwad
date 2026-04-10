@@ -1,0 +1,39 @@
+# Two GPUs on one machine — simplest RPC setup
+# Both GPUs are local, so RPC overhead is minimal.
+#
+# Use case: You have a desktop with 2 NVIDIA GPUs and want to
+# pool them for a model that doesn't fit on one card.
+
+coordinator:
+  host: 127.0.0.1
+  port: 8080
+  # Path to llama-server binary
+  binary: /usr/local/bin/llama-server
+  # Extra args passed to llama-server
+  extra_args: []
+
+workers:
+  - name: gpu0
+    host: 127.0.0.1
+    port: 50052
+    gpu:
+      vendor: nvidia
+      model: RTX 4070 Ti Super
+      vram_gb: 16
+
+  - name: gpu1
+    host: 127.0.0.1
+    port: 50053
+    gpu:
+      vendor: nvidia
+      model: RTX 3060
+      vram_gb: 12
+
+models:
+  default: llama-70b
+  llama-70b:
+    name: Llama 3.3 70B
+    path: /models/llama-3.3-70b-instruct-Q4_K_M.gguf
+    # Tensor split ratio — proportional to VRAM
+    # 16GB : 12GB ≈ 57:43
+    tensor_split: "16,12"

@@ -1,0 +1,47 @@
+# Test config: Llama 3.2 3B (M4 Mac) → Llama 3.3 70B (desktop pool)
+# For benchmarking speculative decoding over the RPC pool
+
+coordinator:
+  host: 192.168.1.100
+  port: 8090
+  backend: cuda
+  gpus:
+    - name: "RTX 4070 Ti Super"
+      vram_gb: 16
+    - name: "RTX 3060"
+      vram_gb: 12
+
+workers:
+  - host: 192.168.1.101
+    gpus:
+      - name: "RTX 2070"
+        vram_gb: 8
+        rpc_port: 50052
+  - host: 192.168.1.102
+    gpus:
+      - name: "Apple M2 Metal"
+        vram_gb: 16
+        rpc_port: 50052
+
+models:
+  llama-3.3-70b:
+    path: C:/Users/youruser/models/Llama-3.3-70B-Instruct-Q4_K_M.gguf
+    default: true
+
+proxy:
+  host: 0.0.0.0
+  port: 8088
+  max_draft_tokens: 32
+  fallback_on_draft_failure: true
+  draft:
+    url: http://127.0.0.1:8081
+    model_name: llama-3.1-8b
+    backend: llamacpp
+  target:
+    url: http://192.168.1.100:8090
+    model_name: llama-3.3-70b
+    backend: llamacpp
+
+binaries:
+  coordinator: llama-server
+  rpc_server: rpc-server

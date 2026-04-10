@@ -1,0 +1,47 @@
+# CPU drafts, GPU verifies — cheapest speculative decoding setup
+# Any old machine with a CPU can draft tokens. The GPU machine
+# only does batch verification, which is much cheaper.
+#
+# Use case: You have one GPU machine and a spare laptop/desktop
+# sitting idle. Put the spare to work as a draft server.
+
+coordinator:
+  host: 192.168.1.10
+  port: 8080
+  binary: /usr/local/bin/llama-server
+
+workers:
+  - name: gpu-main
+    host: 192.168.1.10
+    port: 50052
+    gpu:
+      vendor: nvidia
+      model: RTX 4070 Ti Super
+      vram_gb: 16
+
+models:
+  default: qwen3-32b
+  qwen3-32b:
+    name: Qwen3 32B
+    path: /models/qwen3-32b-Q4_K_M.gguf
+
+# Speculative decoding proxy
+proxy:
+  host: 0.0.0.0
+  port: 8088
+
+  # Draft server — small model on any CPU
+  # Could be an old laptop, Raspberry Pi, whatever
+  draft:
+    url: http://192.168.1.50:11434  # Ollama on spare machine
+    model_name: qwen3:1.7b           # Tiny model, fast on CPU
+    backend: ollama
+
+  # Target server — big model on GPU (the coordinator)
+  target:
+    url: http://192.168.1.10:8080
+    model_name: qwen3-32b
+    backend: llamacpp
+
+  # How many tokens the draft model proposes per round
+  max_draft_tokens: 32

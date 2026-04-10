@@ -1,0 +1,87 @@
+{
+  "baseline": {
+    "label": "baseline-direct",
+    "avg_tok_s": 19.1,
+    "avg_elapsed": 12.21,
+    "prompts": [
+      {
+        "prompt": "factual",
+        "elapsed_s": 9.71,
+        "tokens": 177,
+        "tok_s": 19.7,
+        "prompt_tok_s": 29.8
+      },
+      {
+        "prompt": "code",
+        "elapsed_s": 13.73,
+        "tokens": 256,
+        "tok_s": 19.7,
+        "prompt_tok_s": 31.4
+      },
+      {
+        "prompt": "creative",
+        "elapsed_s": 11.36,
+        "tokens": 216,
+        "tok_s": 19.6,
+        "prompt_tok_s": 29.0
+      },
+      {
+        "prompt": "reasoning",
+        "elapsed_s": 10.56,
+        "tokens": 187,
+        "tok_s": 19.7,
+        "prompt_tok_s": 35.1
+      },
+      {
+        "prompt": "list",
+        "elapsed_s": 15.68,
+        "tokens": 256,
+        "tok_s": 17.0,
+        "prompt_tok_s": 31.4
+      }
+    ]
+  },
+  "speculative": {
+    "label": "speculative-proxy",
+    "avg_tok_s": 6.0,
+    "avg_elapsed": 31.12,
+    "prompts": [
+      {
+        "prompt": "factual",
+        "elapsed_s": 33.34,
+        "tokens": 248,
+        "tok_s": 7.4,
+        "prompt_tok_s": 0
+      },
+      {
+        "prompt": "code",
+        "elapsed_s": 34.22,
+        "tokens": 184,
+        "tok_s": 5.4,
+        "prompt_tok_s": 0
+      },
+      {
+        "prompt": "creative",
+        "elapsed_s": 36.99,
+        "tokens": 267,
+        "tok_s": 7.2,
+        "prompt_tok_s": 0
+      },
+      {
+        "prompt": "reasoning",
+        "elapsed_s": 23.7,
+        "tokens": 97,
+        "tok_s": 4.1,
+        "prompt_tok_s": 0
+      },
+      {
+        "prompt": "list",
+        "elapsed_s": 27.36,
+        "tokens": 157,
+        "tok_s": 5.7,
+        "prompt_tok_s": 0
+      }
+    ]
+  },
+  "speedup": 0.39
+}

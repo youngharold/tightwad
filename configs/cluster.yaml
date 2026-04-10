@@ -1,0 +1,99 @@
+# Tightwad cluster topology
+# Edit this to match your hardware
+
+# --- GPU Pool Config ---
+# Coordinator: the machine that runs llama-server and owns the API
+# Workers: remote machines running rpc-server, exposing their GPUs
+
+coordinator:
+  host: 0.0.0.0  # Desktop serves the API
+  port: 8090      # Different from llama-server's 8080 to avoid conflict
+  backend: cuda
+  gpus:
+    - name: "RTX 4070 Ti Super"
+      vram_gb: 16
+    - name: "RTX 3060"
+      vram_gb: 12
+
+workers:
+  - host: 192.168.1.101  # XPS Desktop (2070)
+    gpus:
+      - name: "RTX 2070"
+        vram_gb: 8
+        rpc_port: 50052
+  - host: 192.168.1.102   # MacBook Air M2 (Metal)
+    gpus:
+      - name: "Apple M2 Metal"
+        vram_gb: 16
+        rpc_port: 50052
+
+models:
+  qwen3-32b:
+    path: C:/Users/youruser/models/Qwen3-32B-Q4_K_M.gguf
+    ctx_size: 8192
+    predict: 4096
+    flash_attn: true
+    default: true
+
+  # Uncomment when 70B models are downloaded:
+  # llama3.3-70b:
+  #   path: C:/Users/youruser/models/Llama-3.3-70B-Q4_K_M.gguf
+  #   ctx_size: 8192
+  #   predict: 4096
+  #   flash_attn: true
+
+  # deepseek-r1-70b:
+  #   path: C:/Users/youruser/models/DeepSeek-R1-Distill-Qwen-70B-Q4_K_M.gguf
+  #   ctx_size: 8192
+  #   predict: 4096
+  #   flash_attn: true
+
+# Speculative decoding proxy — draft model proposes, target verifies
+proxy:
+  host: 0.0.0.0
+  port: 8088
+  max_draft_tokens: 32
+  fallback_on_draft_failure: true
+
+  # --- SSRF protection (SEC-5) ---
+  # Tightwad validates every upstream URL before opening connections.
+  # Dangerous schemes (file://, gopher://, ftp://, etc.) are ALWAYS blocked.
+  # Private/internal IP ranges (127.x, 10.x, 172.16-31.x, 192.168.x,
+  # 169.254.x) are allowed by default because homelab deployments commonly
+  # target LAN servers.
+  #
+  # Set allow_private_upstream: false to enforce strict SSRF blocking and
+  # reject any upstream URL that resolves to a private/internal IP address.
+  # This is the recommended setting for production or internet-facing proxies.
+  allow_private_upstream: true  # false = strict mode; true = homelab mode (default)
+
+  # Optional: require Bearer-token auth on all /v1/ endpoints.
+  # Recommended whenever the proxy is reachable beyond localhost.
+  # Set via env var: TIGHTWAD_PROXY_TOKEN=your-secret-token
+  # auth_token: "${TIGHTWAD_PROXY_TOKEN}"
+  draft:
+    url: http://127.0.0.1:8081
+    model_name: qwen3-1.7b
+    backend: llamacpp
+  # drafters:
+  #   - url: http://192.168.1.101:8081
+  #     model_name: qwen3-8b
+  #     backend: llamacpp
+  #   - url: http://192.168.1.102:8081
+  #     model_name: qwen3-1.7b
+  #     backend: llamacpp
+  #   - url: http://192.168.1.103:11434
+  #     model_name: qwen3:1.7b
+  #     backend: ollama
+  #   - url: http://192.168.1.104:8081  # Linux 7900 XTX rig (needs setup)
+  #     model_name: qwen3-8b
+  #     backend: llamacpp
+  target:
+    url: http://192.168.1.100:8090
+    model_name: qwen3-32b
+    backend: llamacpp
+
+# llama-server binary paths (per-platform)
+binaries:
+  coordinator: /usr/local/bin/llama-server  # ROCm build
+  rpc_server: rpc-server.exe  # Windows, expected in PATH or full path

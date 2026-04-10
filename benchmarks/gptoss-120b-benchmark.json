@@ -1,0 +1,105 @@
+{
+  "config": "GPT-OSS 20B \u2192 GPT-OSS 120B (LAN, same family)",
+  "draft": "gpt-oss-20b (llamacpp)",
+  "target": "gpt-oss-120b (llamacpp)",
+  "avg_acceptance_rate": 0.0,
+  "avg_speedup": 11.31,
+  "avg_rounds": 1.0,
+  "prompts": [
+    {
+      "prompt": "factual",
+      "baseline": {
+        "text": "**First Law (Law of Energy Conservation):** Energy cannot be created or destroyed, only transferred or transformed, so the change in a system\u2019s internal energy equals the heat added to the system minus the work done by the system.  \n\n**Second Law (Law of Entropy):** In any spontaneous process the total entropy of a system and its surroundings always increases, implying that heat cannot spontaneously flow from a colder body to a hotter one.  \n\n**Third Law (Law of Absolute Zero):** As a system approaches absolute zero temperature, its entropy approaches a minimum constant (often taken as zero for a perfectly ordered crystal), making it impossible to reach absolute zero in a finite number of steps.",
+        "tokens": 226,
+        "elapsed_s": 12.77,
+        "tok_s": 17.7
+      },
+      "speculative": {
+        "text": "",
+        "rounds": 1,
+        "drafted_chars": 28,
+        "accepted_chars": 0,
+        "acceptance_rate": 0.0,
+        "elapsed_s": 1.04,
+        "word_count": 0
+      },
+      "speedup": 12.28
+    },
+    {
+      "prompt": "code",
+      "baseline": {
+        "text": "Here\u2019s a clean, well\u2011documented implementation.  \nIt works for any string and treats the text case\u2011insensitively while ignoring\nnon\u2011alphanumeric characters (so `\"A man, a plan, a canal: Panama\"` is\nconsidered a palindrome). If you prefer a stricter check (exact character\u2011by\u2011character\ncomparison), just remove the filtering step.\n\n```python\ndef is_palindrome(s: str) -> bool:\n    \"\"\"\n    Determine whether a given string is a palindrome.\n\n    A palindrome reads the same forward and backward when you ignore\n    case and any characters that are not letters or digits.\n\n    Parameters\n    ----------\n    s : str\n        The string to test.\n\n    Returns\n    -------\n    bool\n        True if ``s`` is a palindrome, False otherwise.\n\n    Examples\n    --------\n    >>> is_palindrome(\"racecar\")\n    True\n    >>> is_palindrome(\"RaceCar\")",
+        "tokens": 256,
+        "elapsed_s": 13.78,
+        "tok_s": 18.6
+      },
+      "speculative": {
+        "text": "",
+        "rounds": 1,
+        "drafted_chars": 28,
+        "accepted_chars": 0,
+        "acceptance_rate": 0.0,
+        "elapsed_s": 1.0,
+        "word_count": 0
+      },
+      "speedup": 13.78
+    },
+    {
+      "prompt": "creative",
+      "baseline": {
+        "text": "Silicon cores hum,  \nData streams through tensors fast,  \nResults bloom in light.",
+        "tokens": 222,
+        "elapsed_s": 12.66,
+        "tok_s": 17.5
+      },
+      "speculative": {
+        "text": "",
+        "rounds": 1,
+        "drafted_chars": 30,
+        "accepted_chars": 0,
+        "acceptance_rate": 0.0,
+        "elapsed_s": 1.11,
+        "word_count": 0
+      },
+      "speedup": 11.41
+    },
+    {
+      "prompt": "reasoning",
+      "baseline": {
+        "text": "The train\u2019s total distance and total time are:\n\n- Total distance = 120\u202fmi + 180\u202fmi = **300\u202fmi**\n- Total time = 2\u202fh + 3\u202fh = **5\u202fh**\n\nAverage speed = total distance \u00f7 total time  \n\n\\[\n\\text{Average speed} = \\frac{300\\ \\text{mi}}{5\\ \\text{h}} = 60\\ \\text{mph}\n\\]\n\n**Average speed for the entire trip: 60\u202fmiles per hour.**",
+        "tokens": 170,
+        "elapsed_s": 10.67,
+        "tok_s": 15.9
+      },
+      "speculative": {
+        "text": "",
+        "rounds": 1,
+        "drafted_chars": 40,
+        "accepted_chars": 0,
+        "acceptance_rate": 0.0,
+        "elapsed_s": 1.94,
+        "word_count": 0
+      },
+      "speedup": 5.5
+    },
+    {
+      "prompt": "list",
+      "baseline": {
+        "text": "**Speculative decoding** is a technique that speeds up inference for large language models by letting a smaller \u201cdraft\u201d model generate candidate tokens that are then verified (or corrected) by a larger, more accurate model. In production AI systems, this approach can be leveraged in several practical ways:\n\n| # | Practical Use | Why It Helps in Production |\n|---|----------------|----------------------------|\n| 1 | **Real\u2011time conversational agents** (chatbots, virtual assistants) | Reduces latency per turn, enabling smoother, near\u2011instantaneous responses while still preserving the quality of a large\u2011model backbone. |\n| 2 | **High\u2011throughput content generation** (e\u2011mail drafts, marketing copy, code snippets) | Allows the system to process many requests in parallel with lower GPU/CPU usage, cutting operational costs for services that generate large volumes of text. |\n| 3 | **On\u2011device inference with cloud fallback** (mobile or edge AI) | The lightweight draft model can run",
+        "tokens": 256,
+        "elapsed_s": 14.52,
+        "tok_s": 17.6
+      },
+      "speculative": {
+        "text": "",
+        "rounds": 1,
+        "drafted_chars": 32,
+        "accepted_chars": 0,
+        "acceptance_rate": 0.0,
+        "elapsed_s": 1.07,
+        "word_count": 0
+      },
+      "speedup": 13.57
+    }
+  ]
+}
