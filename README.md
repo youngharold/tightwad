@@ -59,21 +59,11 @@ YOUR HARDWARE (any mix works)                         TIGHTWAD
 
 The small model is like autocomplete on your phone — it suggests, the big model accepts or corrects. You only ever see the final, verified output.
 
-## Four Modes
+## Six Modes
 
-### 1. Speculative Decoding Proxy — Draft + Verify across machines
+### 1. Combined Mode — Speculation Over a Pool (the killer feature)
 
-A fast small model (e.g., 1.7B on any CPU or cheap GPU) drafts candidate tokens, a large model (e.g., 32B-72B) verifies them in batch. Output quality is **equivalent to running the large model alone**, but up to 2x faster because batch verification is much cheaper than autoregressive generation. Network traffic: **bytes** (token IDs only).
-
-### 2. RPC Cluster — Pool GPUs into one endpoint
-
-Combine GPUs from different machines and vendors into a single OpenAI-compatible API. The coordinator distributes model layers across local and remote GPUs. Use this when a model doesn't fit on any single machine.
-
-> **Note:** The coordinator machine needs enough **system RAM** for the full model file (not just its GPU share). llama.cpp mmaps the entire GGUF before distributing tensors to workers. A 70B Q4_K_M (~40GB) needs ~44GB RAM on the coordinator.
-
-### 3. Combined Mode — Speculation Over a Pool (the killer feature)
-
-**When a model doesn't fit on one machine, pool the GPUs AND speculate on top.** The RPC pool is slow autoregressive (3 tok/s over WiFi), but batch verification amortizes the RPC overhead — 32 tokens per round instead of 1 token per round-trip. Result: **1.8x speedup** over pool-only, making models that don't fit on one machine actually usable.
+**When a model doesn't fit on one machine, pool the GPUs AND speculate on top.** The RPC pool is slow autoregressive (3 tok/s over WiFi), but batch verification amortizes the RPC overhead — 32 tokens per round instead of 1 token per round-trip. Result: **1.86x measured speedup** on Llama 3.3 70B across 4 GPUs over WiFi, making models that don't fit on one machine actually usable.
 
 ```
 ANY junk hardware (P400 2GB, GTX 770, laptop CPU, Raspberry Pi)
@@ -87,14 +77,32 @@ RPC GPU Pool (any mix: CUDA + ROCm + Metal, running 70B)
     │ verifies 32 tokens in ONE forward pass
     │ 1 RPC round-trip for 32 tokens instead of 32 round-trips
     ▼
-5+ tok/s instead of 3 tok/s — and the 70B model fits nowhere else
+4.1 tok/s instead of 2.2 tok/s — and the 70B model fits nowhere else
 ```
 
-### 4. Quality Gate — CPU Fleet Drafts, GPU Verifies
+### 2. Speculative Decoding Proxy — Draft + Verify across machines
 
-A fleet of cheap agents (CPUs, small GPUs) generate full responses using small models. A single powerful GPU reviews each output — approving, correcting, or rejecting it. 60-80% of responses pass unchanged, so the GPU only processes the hard 20-40%. `tightwad gate start` to run this mode.
+A fast small model (e.g., 1.7B on any CPU or cheap GPU) drafts candidate tokens, a large model (e.g., 32B-72B) verifies them in batch. Output quality is **equivalent to running the large model alone** (mathematically identical under greedy decoding), but up to 2x faster because batch verification is much cheaper than autoregressive generation. Network traffic: **bytes** (token IDs only). Works with local targets or cloud APIs. Supports Ollama + llama.cpp backends with full OpenAI/SSE compatibility.
+
+### 3. Multi-Drafter Consensus — Skip the GPU when drafters agree
+
+**Race multiple cheap machines in parallel.** Each drafter generates candidate tokens simultaneously; when they agree, the expensive GPU verification is skipped entirely. More drafters = more tokens bypass the bottleneck. Three consensus modes: `strict` (unanimous), `majority` (>50%), `any_disagree` (verify on any disagreement). Tree-based speculation handles branching draft paths, and Prometheus metrics expose consensus accept/fallback rates.
+
+### 4. RPC Cluster — Pool GPUs into one endpoint
+
+Combine GPUs from different machines and vendors into a single OpenAI-compatible API. The coordinator distributes model layers across local and remote GPUs. Mix NVIDIA + AMD GPUs freely, run 70B+ models on consumer hardware, hot-swap models without restarting workers. Use this when a model doesn't fit on any single machine.
+
+> **Note:** The coordinator machine needs enough **system RAM** for the full model file (not just its GPU share). llama.cpp mmaps the entire GGUF before distributing tensors to workers. A 70B Q4_K_M (~40GB) needs ~44GB RAM on the coordinator.
+
+### 5. Quality Gate — CPU Fleet Drafts, GPU Reviews
+
+Different from token-level speculation — this operates at the **full-response level**. A fleet of cheap agents (CPUs, small GPUs) generate complete responses using small models. A single powerful GPU reviews each output — approving, correcting, or rejecting it. 60-80% of responses pass unchanged, so the GPU only processes the hard 20-40%. `tightwad gate start` to run this mode.
 
 > The draft model needs: (1) same model family as the target, (2) llamacpp backend (not Ollama) for prompt-append verification, (3) any hardware that can run a 1-2B model. That's it.
+
+### 6. Swarm Transfer — P2P Model Distribution
+
+Pulling a 40+ GB GGUF from HuggingFace to every worker takes hours and wastes bandwidth. Tightwad splits models into 64 MB pieces with SHA256 hashes and lets workers pull from **any peer that already has them** — multi-source parallel download, rarest-first piece selection, resume on interrupt, delta updates for new quantizations. Zero central server. See the [Swarm Transfer](#swarm-transfer--p2p-model-distribution) section below for the full protocol and CLI.
 
 ```
 Client (OpenAI API)
