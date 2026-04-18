@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-04-16
+
+### Changed
+- **README modes section** expanded from four to six to match tightwad.dev. Adds first-class entries for **Multi-Drafter Consensus** and **Swarm Transfer**, reorders with **Combined Mode** first to match the killer-feature framing on the website. Wiki `Home.md` updated in lockstep.
+
 ## [0.4.2] - 2026-03-28
 
 ### Fixed
