@@ -99,12 +99,25 @@ class ProcessManager:
     def __init__(self) -> None:
         self._processes: dict[int, ManagedProcess] = {}
 
-    def start(self, cmd: list[str], port: int) -> ManagedProcess:
-        """Start a subprocess and track it."""
+    def start(self, cmd: list[str], port: int, capture_stderr: bool = True) -> ManagedProcess:
+        """Start a subprocess and track it.
+
+        When ``capture_stderr`` is True (default), stderr is rotated into
+        ``~/.tightwad/logs/rpc-{port}.log`` (10 MB cap) so
+        ``tightwad moe profile`` can tail it for expert-routing events.
+        """
+        if capture_stderr:
+            log_path = rpc_log_path(port)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            _rotate_if_needed(log_path)
+            stderr_target = open(log_path, "ab")
+        else:
+            stderr_target = subprocess.DEVNULL
+
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=stderr_target,
         )
         managed = ManagedProcess(
             pid=proc.pid,
@@ -398,6 +411,51 @@ async def rpc_stop_endpoint(request: Request) -> JSONResponse:
     )
 
 
+RPC_LOG_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+def rpc_log_path(port: int) -> Path:
+    return Path.home() / ".tightwad" / "logs" / f"rpc-{port}.log"
+
+
+def _rotate_if_needed(path: Path) -> None:
+    try:
+        if path.exists() and path.stat().st_size > RPC_LOG_MAX_BYTES:
+            rotated = path.with_suffix(path.suffix + ".1")
+            rotated.unlink(missing_ok=True)
+            path.rename(rotated)
+    except OSError as exc:
+        logger.warning("Failed to rotate %s: %s", path, exc)
+
+
+async def moe_profile_endpoint(request: Request) -> JSONResponse:
+    """GET /v1/peer/moe/profile?port=N — aggregated hot-expert counts."""
+    port_str = request.query_params.get("port")
+    if not port_str or not port_str.isdigit():
+        return JSONResponse({"error": "port (int) query param is required"},
+                            status_code=400)
+    port = int(port_str)
+    log_path = rpc_log_path(port)
+    if not log_path.exists():
+        return JSONResponse({"error": f"no log for port {port}"},
+                            status_code=404)
+    try:
+        from .moe_profile import parse_log_file
+    except ImportError:
+        return JSONResponse({"error": "moe_profile module unavailable"},
+                            status_code=500)
+    profile = parse_log_file(log_path)
+    top = [{"layer": h.layer, "expert": h.expert, "count": h.count}
+           for h in profile.top_n(64)]
+    return JSONResponse({
+        "port": port,
+        "total_tokens": profile.total_tokens,
+        "source": profile.source,
+        "top_experts": top,
+        "per_layer_skew": profile.per_layer_skew(),
+    })
+
+
 async def logs_endpoint(request: Request) -> JSONResponse:
     """GET /v1/peer/logs -- return recent log lines."""
     service = request.query_params.get("service", "peer")
@@ -457,6 +515,7 @@ def create_app(config: PeerConfig) -> Starlette:
             Route("/v1/peer/models", models_endpoint, methods=["GET"]),
             Route("/v1/peer/rpc/start", rpc_start_endpoint, methods=["POST"]),
             Route("/v1/peer/rpc/stop", rpc_stop_endpoint, methods=["POST"]),
+            Route("/v1/peer/moe/profile", moe_profile_endpoint, methods=["GET"]),
             Route("/v1/peer/logs", logs_endpoint, methods=["GET"]),
         ],
         middleware=middleware,

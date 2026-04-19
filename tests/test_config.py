@@ -196,6 +196,55 @@ def test_flash_attn_legacy_off_string_coerced(tmp_path):
     assert model.flash_attn is False
 
 
+# -- MoE placement config --
+
+def test_moe_placement_defaults_to_none(tmp_path):
+    cfg = {
+        "coordinator": {"host": "0.0.0.0", "port": 8080, "backend": "cuda", "gpus": []},
+        "models": {"m": {"path": "/m.gguf", "default": True}},
+    }
+    p = tmp_path / "cluster.yaml"
+    p.write_text(yaml.dump(cfg))
+    config = load_config(p)
+    model = config.default_model()
+    assert model.moe_placement is None
+    assert model.moe_hot_profile is None
+
+
+def test_moe_placement_balanced_parsed(tmp_path):
+    cfg = {
+        "coordinator": {"host": "0.0.0.0", "port": 8080, "backend": "cuda", "gpus": []},
+        "models": {
+            "minimax": {
+                "path": "/minimax.gguf", "default": True,
+                "moe_placement": "balanced",
+            }
+        },
+    }
+    p = tmp_path / "cluster.yaml"
+    p.write_text(yaml.dump(cfg))
+    model = load_config(p).default_model()
+    assert model.moe_placement == "balanced"
+
+
+def test_moe_placement_profile_guided_parsed(tmp_path):
+    cfg = {
+        "coordinator": {"host": "0.0.0.0", "port": 8080, "backend": "cuda", "gpus": []},
+        "models": {
+            "minimax": {
+                "path": "/minimax.gguf", "default": True,
+                "moe_placement": "profile-guided",
+                "moe_hot_profile": "~/.tightwad/moe-profile.json",
+            }
+        },
+    }
+    p = tmp_path / "cluster.yaml"
+    p.write_text(yaml.dump(cfg))
+    model = load_config(p).default_model()
+    assert model.moe_placement == "profile-guided"
+    assert model.moe_hot_profile == "~/.tightwad/moe-profile.json"
+
+
 # -- extra_args passthrough --
 
 def test_extra_args_appended():

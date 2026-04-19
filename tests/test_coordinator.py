@@ -88,6 +88,109 @@ def test_build_args_tensor_split(config):
     assert len(parts) == 4
 
 
+# -- MoE placement → --override-tensor flags --
+
+
+def _stub_model_info(is_moe: bool, fused: bool = False):
+    """Shape the minimal inspect_model() return used by the coordinator."""
+    from pathlib import Path
+    from tightwad.gguf_inspect import ModelInfo, MoEInfo, TensorInfo
+
+    tensors = []
+    if is_moe:
+        n_expert, n_layers = 4, 2
+        for layer in range(n_layers):
+            if fused:
+                for part in ("ffn_gate_exps", "ffn_up_exps", "ffn_down_exps"):
+                    tensors.append(TensorInfo(
+                        name=f"blk.{layer}.{part}.weight",
+                        shape=[16, 16, n_expert], dtype="F32",
+                        n_bytes=n_expert * 16 * 16 * 4,
+                    ))
+            else:
+                for expert in range(n_expert):
+                    for part in ("ffn_gate", "ffn_up", "ffn_down"):
+                        tensors.append(TensorInfo(
+                            name=f"blk.{layer}.{part}.{expert}.weight",
+                            shape=[16, 16], dtype="F32",
+                            n_bytes=16 * 16 * 4,
+                        ))
+        moe = MoEInfo(
+            n_expert=n_expert, n_expert_used=2,
+            routing_overhead_bytes=int(0.5 * 1024 ** 3),
+            expert_tensor_names=[t.name for t in tensors],
+        )
+    else:
+        moe = None
+    return ModelInfo(
+        path=Path("/fake/m.gguf"), arch="llama", n_params=None,
+        n_layers=2, quantization="F32", context_length=8192,
+        total_size=sum(t.n_bytes for t in tensors), tensors=tensors, moe=moe,
+    )
+
+
+def test_build_args_ot_emitted_for_indexed_moe(config, monkeypatch):
+    """moe_placement: balanced on an indexed-form MoE emits --override-tensor flags."""
+    import tightwad.coordinator as coord
+
+    model = config.default_model()
+    model.moe_placement = "balanced"
+
+    monkeypatch.setattr(coord, "_moe_override_tensor_flags",
+                        lambda cfg, m: ["^blk\\.0\\.ffn_(gate|up|down)\\.(0|1)\\.weight$=CUDA0"])
+    args = build_server_args(config, model)
+
+    assert "--override-tensor" in args
+    idx = args.index("--override-tensor")
+    assert "CUDA0" in args[idx + 1]
+
+
+def test_build_args_no_ot_when_placement_off(config, monkeypatch):
+    import tightwad.coordinator as coord
+
+    model = config.default_model()
+    model.moe_placement = None
+    monkeypatch.setattr(coord, "_moe_override_tensor_flags",
+                        lambda cfg, m: ["SHOULD_NOT_BE_CALLED"])
+    args = build_server_args(config, model)
+    assert "--override-tensor" not in args
+
+
+def test_build_args_no_ot_for_dense_model(config, monkeypatch):
+    """moe_placement on a dense model silently no-ops (empty flag list)."""
+    import tightwad.coordinator as coord
+
+    model = config.default_model()
+    model.moe_placement = "balanced"
+
+    def fake_inspect(path):
+        return _stub_model_info(is_moe=False)
+
+    monkeypatch.setattr("tightwad.gguf_inspect.inspect_model", fake_inspect)
+    args = build_server_args(config, model)
+    assert "--override-tensor" not in args
+
+
+def test_build_args_warns_on_fused_moe(config, monkeypatch, caplog):
+    """Fused MoE falls back to layer-split but logs a warning."""
+    import tightwad.coordinator as coord
+
+    model = config.default_model()
+    model.moe_placement = "balanced"
+
+    def fake_inspect(path):
+        return _stub_model_info(is_moe=True, fused=True)
+
+    monkeypatch.setattr("tightwad.gguf_inspect.inspect_model", fake_inspect)
+
+    import logging
+    with caplog.at_level(logging.WARNING, logger="tightwad.coordinator"):
+        args = build_server_args(config, model)
+    assert "--override-tensor" not in args
+    assert any("fused" in rec.message.lower() or "defuse" in rec.message.lower()
+               for rec in caplog.records)
+
+
 # -- Pidfile JSON format --
 
 def test_pidfile_json_roundtrip(tmp_path, monkeypatch):

@@ -347,6 +347,7 @@ def check_models(config: ClusterConfig) -> Section:
 
     # MoE + small GPU checks
     _check_moe_vram(section, config)
+    _check_moe_placement(section, config)
 
     return section
 
@@ -393,6 +394,82 @@ def _check_moe_vram(section: Section, config: ClusterConfig) -> None:
                     "or offload to CPU on a single large-RAM machine."
                 ) if is_oom else "",
             ))
+
+
+def _check_moe_placement(section: Section, config: ClusterConfig) -> None:
+    """Validate `moe_placement` config against the model file."""
+    try:
+        from .gguf_inspect import inspect_model
+        from .moe_defuse import is_fused_expert
+    except ImportError:
+        return
+
+    for name, model in config.models.items():
+        placement = getattr(model, "moe_placement", None)
+        if not placement or placement == "off":
+            continue
+
+        model_path = Path(model.path)
+        if not model_path.exists() or _is_cross_platform_path(model.path):
+            continue
+
+        try:
+            info = inspect_model(str(model_path))
+        except Exception:
+            continue
+
+        if not info.is_moe:
+            section.results.append(CheckResult(
+                name=f"MoE placement: {name}",
+                status=Status.WARN,
+                detail=f"moe_placement: {placement} but model is dense",
+                fix="Remove `moe_placement` from this model entry.",
+            ))
+            continue
+
+        fused = any(is_fused_expert(t.name) for t in info.tensors)
+        if fused:
+            section.results.append(CheckResult(
+                name=f"MoE placement: {name}",
+                status=Status.WARN,
+                detail="Fused expert tensors — `moe_placement` will no-op.",
+                fix=f"Run `tightwad moe defuse {model.path} <out.gguf>` and point `moe_placement` at the indexed file.",
+            ))
+            continue
+
+        if placement == "profile-guided":
+            hot_profile = getattr(model, "moe_hot_profile", None)
+            if not hot_profile:
+                section.results.append(CheckResult(
+                    name=f"MoE placement: {name}",
+                    status=Status.WARN,
+                    detail="profile-guided requires `moe_hot_profile`",
+                    fix="Capture a profile via `tightwad moe profile` first, then set moe_hot_profile to the JSON path.",
+                ))
+                continue
+            hot_path = Path(hot_profile).expanduser()
+            if not hot_path.exists():
+                section.results.append(CheckResult(
+                    name=f"MoE placement: {name}",
+                    status=Status.WARN,
+                    detail=f"moe_hot_profile not found: {hot_profile}",
+                    fix="Re-run `tightwad moe profile` or correct the path.",
+                ))
+                continue
+            env_ok = config.env.get("LLAMA_LOG_MOE") == "1"
+            if not env_ok:
+                section.results.append(CheckResult(
+                    name=f"MoE placement: {name}",
+                    status=Status.WARN,
+                    detail="profile-guided configured but LLAMA_LOG_MOE=1 not set — future profiles will be empty",
+                    fix="Add `env: { LLAMA_LOG_MOE: \"1\" }` and rebuild llama.cpp with scripts/patches/llamacpp-moe-log.patch.",
+                ))
+
+        section.results.append(CheckResult(
+            name=f"MoE placement: {name}",
+            status=Status.PASS,
+            detail=f"moe_placement: {placement}",
+        ))
 
 
 def check_network(config: ClusterConfig) -> Section:

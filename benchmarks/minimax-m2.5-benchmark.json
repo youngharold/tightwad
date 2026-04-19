@@ -1,0 +1,65 @@
+{
+  "config": "MiniMax M2.5 (MLX 4-bit) on Mac Studio M3 Ultra, direct only",
+  "target": "minimax/minimax-m2.5",
+  "target_url": "http://192.168.86.29:1234",
+  "hardware": "Mac Studio M3 Ultra, 256 GB unified memory, LM Studio",
+  "note": "Direct LM Studio baseline. Proxy comparison requires tightwad proxy running \u2014 see docs/moe.md.",
+  "captured_at": 1776575672,
+  "prompts": [
+    {
+      "name": "reasoning",
+      "prompt": "Solve step by step: a train leaves Chicago at 9 AM traveling 60 mph. Another leaves St. Louis at 10 AM traveling 75 mph toward Chicago. The cities are 295 miles apart. When do they meet?",
+      "direct": {
+        "tokens": 181,
+        "ttft_ms": 466.3,
+        "elapsed_s": 4.253,
+        "tok_s": 42.6,
+        "text": "<think>We need to solve a word problem: Two trains traveling towards each other, one leaves Chicago at 9 AM traveling 60 mph. The second leaves St. Louis at 10 AM traveling 75 mph toward Chicago. Dist"
+      }
+    },
+    {
+      "name": "code",
+      "prompt": "Write a Python function that returns the longest palindromic substring of its input.",
+      "direct": {
+        "tokens": 200,
+        "ttft_ms": 377.9,
+        "elapsed_s": 4.143,
+        "tok_s": 48.3,
+        "text": "<think>The user asks: \"Write a Python function that returns the longest palindromic substring of its input.\"\n\nWe need to respond with code. The user didn't specify any constraints, but we can assume t"
+      }
+    },
+    {
+      "name": "factual",
+      "prompt": "Summarize the Treaty of Westphalia in three sentences.",
+      "direct": {
+        "tokens": 197,
+        "ttft_ms": 364.9,
+        "elapsed_s": 4.134,
+        "tok_s": 47.7,
+        "text": "<think>The user asks: \"Summarize the Treaty of Westphalia in three sentences.\"\n\nWe need to provide a concise summary, presumably about 3-4 lines. The user wants three sentences summarizing the Treaty "
+      }
+    },
+    {
+      "name": "translate",
+      "prompt": "Translate to German: 'The rain in Spain falls mainly on the plain.'",
+      "direct": {
+        "tokens": 200,
+        "ttft_ms": 336.4,
+        "elapsed_s": 4.142,
+        "tok_s": 48.3,
+        "text": "<think>We need to translate \"The rain in Spain falls mainly on the plain.\" into German. This is a famous line from the song \"The Rain in Spain\" from My Fair Lady (musical). The translation often is: \""
+      }
+    },
+    {
+      "name": "multilingual",
+      "prompt": "Explain recursion in English, Spanish, and Japanese, one sentence each.",
+      "direct": {
+        "tokens": 200,
+        "ttft_ms": 359.6,
+        "elapsed_s": 7.472,
+        "tok_s": 26.8,
+        "text": "<think>The user asks: \"Explain recursion in English, one sentence each.\" So they want three sentences (English, Spanish, Japanese) explaining recursion. The user wants a single sentence each language:"
+      }
+    }
+  ]
+}

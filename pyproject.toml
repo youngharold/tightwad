@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tightwad"
-version = "0.4.3"
+version = "0.5.0"
 description = "Mixed-vendor GPU inference cluster manager with speculative decoding"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
-authors = [{name = "Akiva Solutions"}]
+authors = [{name = "youngharold"}]
 keywords = ["llm", "inference", "speculative-decoding", "gpu", "cluster", "mixed-vendor"]
 classifiers = [
     "Development Status :: 3 - Alpha",

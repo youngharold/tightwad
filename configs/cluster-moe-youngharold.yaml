@@ -1,0 +1,64 @@
+# Reference MoE config: 4-GPU RPC pool + Mac Studio LM Studio proxy target.
+# Uses expert-aware placement (balanced) once the model has been through
+# `tightwad moe defuse` to produce an indexed-form GGUF.
+
+coordinator:
+  host: 0.0.0.0
+  port: 8090
+  backend: cuda
+  gpus:
+    - name: "RTX 4070 Ti Super"
+      vram_gb: 16
+    - name: "RTX 3060"
+      vram_gb: 12
+
+workers:
+  - host: 192.168.86.250          # XPS / RTX 2070
+    ssh_user: jacob
+    gpus:
+      - name: "RTX 2070"
+        vram_gb: 8
+        rpc_port: 50052
+  - host: 192.168.86.28           # MacBook Air M2
+    gpus:
+      - name: "Apple M2 Metal"
+        vram_gb: 11
+        rpc_port: 50052
+
+models:
+  gpt-oss-120b:
+    path: /models/gpt-oss-120b-indexed.gguf   # produced by `tightwad moe defuse`
+    ctx_size: 8192
+    predict: 4096
+    flash_attn: true
+    default: true
+    moe_placement: balanced        # off | balanced | profile-guided
+
+  # Profile-guided example (requires the instrumented llama.cpp build and a
+  # captured profile JSON — see scripts/patches/README.md).
+  # gpt-oss-120b-hot:
+  #   path: /models/gpt-oss-120b-indexed.gguf
+  #   moe_placement: profile-guided
+  #   moe_hot_profile: ~/.tightwad/moe-profile.json
+
+proxy:
+  host: 0.0.0.0
+  port: 8088
+  max_draft_tokens: auto
+  fallback_on_draft_failure: true
+  chat_template: auto
+  draft:
+    url: http://127.0.0.1:8081
+    model_name: qwen3-1.7b
+    backend: llamacpp
+  target:
+    # Mac Studio running LM Studio — OpenAI-compatible, hosts MiniMax M2.5 MLX.
+    url: http://192.168.86.29:1234
+    model_name: minimax/minimax-m2.5
+    backend: llamacpp
+
+# Profile-guided requires the instrumented llama.cpp build. Add this env block
+# after applying `scripts/patches/llamacpp-moe-log.patch` to your llama.cpp
+# checkout and rebuilding. `tightwad doctor` warns otherwise.
+# env:
+#   LLAMA_LOG_MOE: "1"

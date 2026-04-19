@@ -35,6 +35,15 @@ models:
     flash_attn: true
     default: true
 
+  # MoE with expert-aware placement (v0.5+). Requires an indexed-form GGUF —
+  # run `tightwad moe defuse <fused.gguf> <indexed.gguf>` on most production
+  # MoE models first. See docs/moe.md.
+  #
+  # gpt-oss-120b:
+  #   path: C:/Users/youruser/models/gpt-oss-120b-indexed.gguf
+  #   moe_placement: balanced          # off | balanced | profile-guided
+  #   # moe_hot_profile: ~/.tightwad/moe-profile.json   # required for profile-guided
+
   # Uncomment when 70B models are downloaded:
   # llama3.3-70b:
   #   path: C:/Users/youruser/models/Llama-3.3-70B-Q4_K_M.gguf

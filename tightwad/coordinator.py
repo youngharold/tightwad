@@ -87,10 +87,61 @@ def build_server_args(config: ClusterConfig, model: ModelConfig) -> list[str]:
     if len(split) > 1:
         args.extend(["--tensor-split", ",".join(str(s) for s in split)])
 
+    # Expert-aware placement: emit one --override-tensor flag per (layer, device)
+    # pair when the model opts in via moe_placement. Silently no-op for dense
+    # models, opted-out models, fused-expert GGUFs, or missing gguf package.
+    if getattr(model, "moe_placement", None) and model.moe_placement != "off":
+        for flag in _moe_override_tensor_flags(config, model):
+            args.extend(["--override-tensor", flag])
+
     # Backend-specific and user-supplied extra arguments
     args.extend(config.extra_args)
 
     return args
+
+
+def _moe_override_tensor_flags(config: ClusterConfig, model: ModelConfig) -> list[str]:
+    try:
+        from . import gguf_inspect as _gguf_inspect
+        from .moe_placement import build_slots, plan_expert_placement
+    except ImportError:
+        return []
+
+    try:
+        info = _gguf_inspect.inspect_model(model.path)
+    except Exception as exc:
+        logger.warning("moe_placement: inspect_model(%s) failed: %s", model.path, exc)
+        return []
+    if not info.is_moe:
+        return []
+
+    hot = None
+    if model.moe_placement == "profile-guided" and model.moe_hot_profile:
+        try:
+            from .moe_profile import HotExpertProfile
+            hot = HotExpertProfile.load(model.moe_hot_profile).frequency()
+        except ImportError:
+            logger.warning(
+                "moe_placement: profile-guided requested but moe_profile "
+                "module not available; falling back to balanced",
+            )
+        except Exception as exc:
+            logger.warning(
+                "moe_placement: failed to load hot profile %s: %s",
+                model.moe_hot_profile, exc,
+            )
+
+    plan = plan_expert_placement(
+        info, build_slots(config),
+        hot_experts=hot, strategy=model.moe_placement,
+    )
+    if plan.fused_fallback:
+        logger.warning(
+            "moe_placement: %s has fused expert tensors — run `tightwad moe "
+            "defuse` to enable per-expert placement. Falling back to "
+            "layer-only split.", model.path,
+        )
+    return plan.override_tensor_args
 
 
 def start(

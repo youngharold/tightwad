@@ -19,8 +19,10 @@ from tightwad.peer import (
     create_app,
     read_pidfile,
     remove_pidfile,
+    rpc_log_path,
     write_pidfile,
     _get_memory_info,
+    _rotate_if_needed,
     _scan_gguf_files,
 )
 
@@ -582,3 +584,72 @@ class TestPidfile:
         remove_pidfile()
         assert not pidfile.exists()
         assert read_pidfile() is None
+
+
+class TestMoeProfileEndpoint:
+    def test_returns_404_when_no_log(self, peer_config):
+        client = TestClient(create_app(peer_config))
+        resp = client.get("/v1/peer/moe/profile?port=55123")
+        assert resp.status_code == 404
+
+    def test_returns_400_when_port_missing(self, peer_config):
+        client = TestClient(create_app(peer_config))
+        resp = client.get("/v1/peer/moe/profile")
+        assert resp.status_code == 400
+
+    def test_parses_log(self, peer_config, tmp_path, monkeypatch):
+        log_dir = tmp_path / "logs"
+        log_dir.mkdir()
+        log = log_dir / "rpc-50052.log"
+        log.write_text(
+            "moe: layer=0 chosen=[0,1]\n"
+            "moe: layer=0 chosen=[0,3]\n"
+            "moe: layer=1 chosen=[5]\n"
+        )
+        monkeypatch.setattr("tightwad.peer.rpc_log_path", lambda p: log)
+        client = TestClient(create_app(peer_config))
+        resp = client.get("/v1/peer/moe/profile?port=50052")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["port"] == 50052
+        assert data["total_tokens"] == 3
+        top = {(h["layer"], h["expert"]): h["count"] for h in data["top_experts"]}
+        assert top[(0, 0)] == 2
+
+
+class TestRpcLogRotation:
+    def test_rotates_over_limit(self, tmp_path, monkeypatch):
+        import tightwad.peer as peer_module
+        monkeypatch.setattr(peer_module, "RPC_LOG_MAX_BYTES", 100)
+        log = tmp_path / "rpc.log"
+        log.write_bytes(b"A" * 500)
+        _rotate_if_needed(log)
+        assert not log.exists()
+        assert log.with_suffix(".log.1").exists()
+
+    def test_does_not_rotate_under_limit(self, tmp_path):
+        log = tmp_path / "rpc.log"
+        log.write_bytes(b"small")
+        _rotate_if_needed(log)
+        assert log.exists()
+
+
+class TestProcessManagerStderrCapture:
+    def test_capture_writes_to_rotated_log(self, tmp_path, monkeypatch):
+        import tightwad.peer as peer_module
+        # Redirect rpc_log_path to a tmp dir so we don't scribble into $HOME
+        monkeypatch.setattr(peer_module, "rpc_log_path",
+                             lambda port: tmp_path / f"rpc-{port}.log")
+
+        mgr = ProcessManager()
+        # Use /usr/bin/true (or cmd.exe-style) to avoid a long-running process
+        cmd = ["/usr/bin/true"] if Path("/usr/bin/true").exists() else ["true"]
+        managed = mgr.start(cmd, port=50099, capture_stderr=True)
+
+        assert (tmp_path / "rpc-50099.log").exists()
+        # Clean up
+        try:
+            os.kill(managed.pid, 0)
+        except OSError:
+            pass

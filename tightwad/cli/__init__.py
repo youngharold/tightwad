@@ -55,3 +55,4 @@ from . import gate  # noqa: E402, F401
 from . import peer  # noqa: E402, F401
 from . import tools  # noqa: E402, F401
 from . import service  # noqa: E402, F401
+from . import moe  # noqa: E402, F401

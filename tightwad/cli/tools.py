@@ -534,8 +534,12 @@ def pull(model_spec, model_dir, list_models):
 @cli.command("inspect")
 @click.argument("model_path", type=click.Path(exists=True))
 @click.option("--plan", "show_plan", is_flag=True, help="Show distribution plan for current cluster")
+@click.option("--moe-strategy", type=click.Choice(["balanced", "profile-guided"]), default=None,
+              help="Also compute an expert-placement preview with the chosen strategy.")
+@click.option("--hot-profile", type=click.Path(exists=True), default=None,
+              help="Hot-expert JSON; required for --moe-strategy profile-guided.")
 @click.pass_context
-def inspect_cmd(ctx, model_path, show_plan):
+def inspect_cmd(ctx, model_path, show_plan, moe_strategy, hot_profile):
     """Inspect a GGUF model file: metadata, tensors, distribution plan."""
     try:
         from ..gguf_inspect import inspect_model, plan_distribution, format_report
@@ -551,6 +555,42 @@ def inspect_cmd(ctx, model_path, show_plan):
 
     output = format_report(model_info, plan)
     console.print(output)
+
+    if moe_strategy and model_info.is_moe:
+        _print_expert_placement_preview(ctx, model_info, moe_strategy, hot_profile)
+
+
+def _print_expert_placement_preview(ctx, model_info, strategy, hot_profile):
+    from ..moe_placement import build_slots, plan_expert_placement
+    from ..moe_device_bench import measure_device_scores
+
+    config = _load(ctx)
+    slots = build_slots(config)
+    if not slots:
+        console.print("[yellow]No GPUs configured; skipping placement preview.[/yellow]")
+        return
+
+    hot = None
+    if strategy == "profile-guided":
+        if not hot_profile:
+            console.print("[red]--hot-profile is required for --moe-strategy profile-guided[/red]")
+            return
+        from ..moe_profile import HotExpertProfile
+        hot = HotExpertProfile.load(hot_profile).frequency()
+
+    scores = measure_device_scores(config) if strategy == "profile-guided" else None
+    plan = plan_expert_placement(
+        model_info, slots, hot_experts=hot, device_scores=scores, strategy=strategy,
+    )
+
+    console.print("\n[bold]Expert placement preview[/bold]")
+    if plan.fused_fallback:
+        for w in plan.warnings:
+            console.print(f"[yellow]  {w}[/yellow]")
+        return
+    for device, gb_bytes in plan.per_device_bytes.items():
+        console.print(f"  {device}: {gb_bytes / (1024 ** 3):.2f} GB")
+    console.print(f"  {len(plan.override_tensor_args)} --override-tensor flags will be emitted.")
 
 
 @cli.command("distribute")

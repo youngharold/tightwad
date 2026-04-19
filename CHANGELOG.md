@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-19
+
+### Added
+- **Expert-aware MoE placement** — new `moe_placement: balanced | profile-guided` per-model config. Emits llama.cpp `--override-tensor` flags that pin whole experts to specific GPUs instead of relying on layer-level splits. Works with indexed-form MoE GGUFs; `tightwad moe defuse` handles the fused-tensor majority.
+- **`tightwad moe defuse`** — rewrites fused expert tensors (`blk.L.ffn_*_exps.weight`) to indexed form (`blk.L.ffn_*.E.weight`) so per-expert placement is actually achievable. Streaming I/O, single pass, identical weights.
+- **`tightwad moe plan`** — generates and previews the expert placement map for the current cluster. `--emit-ot` prints shell-paste-ready flags; `--json` emits the full plan as JSON.
+- **`tightwad moe profile` / `moe summary`** — captures per-expert routing frequencies from a running cluster (llama.cpp stderr, local logs, or peer agent). Requires the instrumented llama.cpp build from `scripts/patches/llamacpp-moe-log.patch` for full fidelity; unpatched builds capture aggregate routing-event counts.
+- **`tightwad moe bench`** — MoE-specific A/B benchmark with live-streaming per-prompt table (TTFT, rolling acceptance, speedup). Targets any OpenAI-compatible endpoint, including LM Studio on `:1234`.
+- **Auto-measured device scores** (`tightwad/moe_device_bench.py`) — profile-guided placement uses real TCP-RTT measurements per device with a 24-hour cache at `~/.tightwad/device-scores.json`.
+- **Peer endpoint `GET /v1/peer/moe/profile`** — aggregated hot-expert counts from `rpc-server` stderr (now captured to `~/.tightwad/logs/rpc-{port}.log` with 10 MB rotation).
+- **Doctor checks** — warns on MoE+dense mismatch, fused-without-defuse, profile-guided without a hot profile or without `LLAMA_LOG_MOE=1`.
+- Reference config `configs/cluster-moe-youngharold.yaml` and `docs/moe.md` guide.
+
 ## [0.4.3] - 2026-04-16
 
 ### Changed

@@ -104,6 +104,29 @@ Different from token-level speculation — this operates at the **full-response 
 
 Pulling a 40+ GB GGUF from HuggingFace to every worker takes hours and wastes bandwidth. Tightwad splits models into 64 MB pieces with SHA256 hashes and lets workers pull from **any peer that already has them** — multi-source parallel download, rarest-first piece selection, resume on interrupt, delta updates for new quantizations. Zero central server. See the [Swarm Transfer](#swarm-transfer--p2p-model-distribution) section below for the full protocol and CLI.
 
+## MoE support (v0.5)
+
+Tightwad treats Mixture-of-Experts models as first-class. Expert-aware placement pins whole experts to specific GPUs via llama.cpp's `--override-tensor` flag; profile-guided placement routes frequently-hit experts onto your fastest device based on captured routing frequencies.
+
+```yaml
+models:
+  gpt-oss-120b:
+    path: /models/gpt-oss-120b-indexed.gguf
+    moe_placement: balanced          # off | balanced | profile-guided
+```
+
+Most modern MoE GGUFs ship fused expert tensors that cannot be per-expert-split. Run `tightwad moe defuse <fused.gguf> <indexed.gguf>` once to convert — output is the same size, same quantization, loads identically.
+
+```
+tightwad moe plan gpt-oss-120b-indexed.gguf --emit-ot   # preview flags
+tightwad moe defuse gpt-oss-120b.gguf gpt-oss-120b-indexed.gguf
+tightwad moe profile --follow-coord --duration 300      # capture hot experts
+tightwad moe bench --target-url http://<lmstudio>:1234 \
+  --target-model minimax/minimax-m2.5 --json bench.json
+```
+
+Full guide: [`docs/moe.md`](docs/moe.md). Reference cluster: [`configs/cluster-moe-youngharold.yaml`](configs/cluster-moe-youngharold.yaml).
+
 ```
 Client (OpenAI API)
         │

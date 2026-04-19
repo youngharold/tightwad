@@ -43,6 +43,19 @@ class ModelConfig:
     predict: int = 4096
     flash_attn: bool = True
     default: bool = False
+    #: Expert-placement strategy for MoE models.
+    #:
+    #: ``None`` / ``"off"`` (default) — no per-expert placement; the existing
+    #: layer-only ``--tensor-split`` behavior applies.
+    #:
+    #: ``"balanced"`` — bin-pack expert tensors across GPUs proportional to
+    #: VRAM. Requires an indexed-form GGUF (see ``tightwad moe defuse``).
+    #:
+    #: ``"profile-guided"`` — same as balanced, but consumes a captured
+    #: hot-expert profile at ``moe_hot_profile`` to pin frequently-hit experts
+    #: onto the highest-scoring device.
+    moe_placement: str | None = None
+    moe_hot_profile: str | None = None
 
 
 @dataclass
@@ -454,6 +467,8 @@ def load_config(path: str | Path | None = None) -> ClusterConfig:
             predict=m.get("predict", 4096),
             flash_attn=m.get("flash_attn", True) not in (False, "off", "false", "no", 0),
             default=m.get("default", False),
+            moe_placement=m.get("moe_placement"),
+            moe_hot_profile=m.get("moe_hot_profile"),
         )
 
     binaries = raw.get("binaries", {})
