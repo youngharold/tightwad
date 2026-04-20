@@ -49,6 +49,7 @@ Use this to pick the right Tightwad configuration:
 | 2+ machines, any GPUs | Speculative decoding proxy — **this is where Tightwad shines** |
 | 2+ machines, some CPU-only | CPU drafting + GPU verification — still works, contributes |
 | Any machine + cloud API key | GPU/CPU draft locally, verify via API — slash API costs |
+| MoE target (Mixtral, GPT-OSS, Qwen3-MoE, MiniMax, DeepSeek) | **Defuse the GGUF first**, then enable `moe_placement: balanced` — see "MoE Models" section below |
 
 **Rule of thumb:** If there's more than one machine with any compute at all, Tightwad can help.
 
@@ -249,6 +250,94 @@ curl http://localhost:8088/v1/tightwad/status
 
 ---
 
+## MoE Models (v0.5+)
+
+Mixture-of-Experts models (Mixtral, GPT-OSS, Qwen3-MoE, MiniMax M2.5, DeepSeek-MoE) are first-class in Tightwad 0.5. If the user wants to run an MoE target across a pool, this is the path.
+
+### Step 1: Defuse the GGUF (almost always required)
+
+Most MoE GGUFs ship with **fused** expert tensors (`blk.L.ffn_*_exps.weight`) — one tensor per layer covering every expert. llama.cpp cannot per-expert-split a fused tensor, so placement will silently no-op. Tightwad ships a one-time rewriter:
+
+```bash
+tightwad moe defuse /path/to/mixtral-8x7b.Q4_K_M.gguf /path/to/mixtral-8x7b-indexed.Q4_K_M.gguf
+```
+
+- Output size equals input size. No quantization change. Weights are byte-identical when sliced back.
+- Load the indexed file with `llama-server` exactly like the original.
+- Skip this step only if you already have an indexed-form GGUF — `tightwad doctor` will warn you if placement is configured on a fused model.
+
+### Step 2: Configure `moe_placement` on the model
+
+```yaml
+models:
+  mixtral-8x7b:
+    path: /models/mixtral-8x7b-indexed.Q4_K_M.gguf
+    moe_placement: balanced          # off | balanced | profile-guided
+    default: true
+```
+
+- **`balanced`** (recommended default) — bin-packs whole experts across GPUs proportional to VRAM. Emits llama.cpp `--override-tensor` flags automatically at `tightwad start`.
+- **`profile-guided`** — pins frequently-hit experts to the fastest GPU using a captured profile. Experimental; requires the llama.cpp patch at `scripts/patches/llamacpp-moe-log.patch` + `env: { LLAMA_LOG_MOE: "1" }`. Recommend starting with `balanced` first.
+
+### Step 3: Preview before launch (optional but valuable)
+
+```bash
+tightwad moe plan /models/mixtral-8x7b-indexed.Q4_K_M.gguf               # human-readable table
+tightwad moe plan /models/mixtral-8x7b-indexed.Q4_K_M.gguf --emit-ot     # just the -ot flags
+tightwad moe plan /models/mixtral-8x7b-indexed.Q4_K_M.gguf --json        # machine-readable
+```
+
+If the plan looks balanced (per-device bytes within ±15% of VRAM ratio), proceed.
+
+### Step 4: Start the cluster and verify `-ot` emission
+
+```bash
+tightwad start
+```
+
+Check `~/.tightwad/logs/coordinator.log` — you should see `--override-tensor "^blk\.0\.ffn_(gate|up|down)\.(0|1|...)\.weight$=CUDA0"` lines in the llama-server invocation. If not, placement silently no-op'd (most common cause: still fused, re-run defuse).
+
+### Step 5 (optional): Capture a profile and upgrade to profile-guided
+
+```bash
+# After the cluster has served representative traffic for 5+ minutes:
+tightwad moe profile --follow-coord --duration 300 -o ~/.tightwad/moe-profile.json
+tightwad moe summary ~/.tightwad/moe-profile.json
+
+# Then update cluster.yaml:
+#   moe_placement: profile-guided
+#   moe_hot_profile: ~/.tightwad/moe-profile.json
+# Restart with `tightwad stop && tightwad start`.
+```
+
+Hot-expert capture requires the instrumented llama.cpp build — see `scripts/patches/README.md`. Without it, profile-guided degrades to balanced (doctor warns).
+
+### MoE model selection guide
+
+| Target | Params | Recommended draft (same family!) | Notes |
+|---|---|---|---|
+| Mixtral 8x7B (~47B MoE, 13B active) | ~26 GB Q4 | Mistral 7B | Classic MoE entry point; fits a single 4090 |
+| GPT-OSS 120B | ~60 GB Q4 | GPT-OSS 20B | Needs pooled VRAM or a very large single card |
+| Qwen3-MoE 30B (MoE w/ 3B active) | ~18 GB Q4 | Qwen3-1.7B or 7B | Lean on activation sparsity |
+| DeepSeek-MoE 16B (2B active) | ~10 GB Q4 | DeepSeek 1.3B | Fits a 12GB GPU comfortably |
+| MiniMax M2.5 (229B) | ~130 GB Q4 | Qwen3-1.7B (via LM Studio) | Treat as API target; use speculation proxy, not RPC placement |
+
+### MoE benchmark
+
+Use the MoE-specific bench for acceptance/TTFT/speedup numbers against an OpenAI-compatible target (LM Studio, vLLM, llama-server):
+
+```bash
+tightwad moe bench \
+  --target-url http://<host>:1234 \
+  --target-model <model-id> \
+  --max-tokens 256 \
+  --json benchmarks/<model>-benchmark.json
+```
+
+Live-streams per-prompt TTFT, rolling acceptance, speedup.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely Cause | Fix |
@@ -261,6 +350,10 @@ curl http://localhost:8088/v1/tightwad/status
 | Proxy starts but no speedup | `max_draft_tokens` too low | Set `max_draft_tokens: auto` or `32` in cluster.yaml |
 | Chat works but 0% acceptance | Chat template mismatch | Set `proxy.chat_template: llama3` for Llama models (auto-detects in v0.4+) |
 | `alloc_tensor_range` error | MoE model routing overhead | MoE models replicate ~20GB to every GPU. Use 24GB+ GPUs only. `tightwad doctor` warns about this |
+| `moe_placement` set but no `--override-tensor` flags in coordinator.log | GGUF still uses fused expert tensors | Run `tightwad moe defuse <fused.gguf> <indexed.gguf>` and point the model path at the indexed file |
+| Doctor warns "profile-guided without LLAMA_LOG_MOE" | llama.cpp not instrumented for expert logging | Apply `scripts/patches/llamacpp-moe-log.patch`, rebuild llama.cpp, add `env: { LLAMA_LOG_MOE: "1" }` to cluster.yaml. Or downgrade to `moe_placement: balanced` |
+| `tightwad moe profile` returns empty hits but nonzero total_tokens | Same as above — unpatched llama.cpp | Patch required for per-expert capture. `total_tokens > 0, hits == []` is the "working but unpatched" state |
+| MoE model loads but per-device VRAM lopsided | `per_device_bytes` skew check — placement plan is wrong | Run `tightwad moe plan <model> --json` and inspect. File an issue if the deviation from VRAM ratio is >15% |
 | Version mismatch at startup | llama.cpp versions differ | Build same version on all machines, or `--skip-version-check` |
 | Draft machine keeps failing | Hardware too slow | CPU draft needs ≥15 tok/s to help. Try a smaller model (0.5B) |
 | "Model not found" | Model not pulled on remote | SSH to that machine, run `ollama pull <model>` |
