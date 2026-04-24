@@ -631,6 +631,12 @@ The proxy supports two backend types for draft and target servers:
 
 The output is **equivalent** to running the large model alone — the small model just proposes shortcuts.
 
+This isn't a new idea — it's the same technique Google, DeepMind, and most production inference stacks use to accelerate their frontier models. Tightwad just puts it in your hands without the data center:
+
+- **Leviathan, Kalman, Matias (2022/2023) — "Fast Inference from Transformers via Speculative Decoding."** ICML 2023. [arXiv:2211.17192](https://arxiv.org/abs/2211.17192) — the foundational paper.
+- **Chen et al. (2023) — "Accelerating Large Language Model Decoding with Speculative Sampling."** DeepMind. [arXiv:2302.01318](https://arxiv.org/abs/2302.01318) — independent parallel formulation.
+- **Google Research (2024) — "Looking Back at Speculative Decoding"** — [plain-English retrospective](https://research.google/blog/looking-back-at-speculative-decoding/) from the original authors covering production deployment lessons.
+
 ### Benchmark Results
 
 #### Wall-Clock Speedup (Qwen3-8B → Qwen3-32B, cross-machine llama-server)
