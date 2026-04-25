@@ -644,6 +644,8 @@ This isn't a new idea — it's the same technique Google, DeepMind, and most pro
 - **Chen et al. (2023) — "Accelerating Large Language Model Decoding with Speculative Sampling."** DeepMind. [arXiv:2302.01318](https://arxiv.org/abs/2302.01318) — independent parallel formulation.
 - **Google Research (2024) — "Looking Back at Speculative Decoding"** — [plain-English retrospective](https://research.google/blog/looking-back-at-speculative-decoding/) from the original authors covering production deployment lessons.
 
+> *Tightwad is independent open-source software (MIT) with no affiliation, endorsement, or commercial relationship with Google, Google DeepMind, or the listed authors. References to these publications are nominative fair use of public academic work.*
+
 ### Benchmark Results
 
 #### Wall-Clock Speedup (Qwen3-8B → Qwen3-32B, cross-machine llama-server)
@@ -1173,4 +1175,6 @@ configs/                # Example cluster.yaml configs
 
 ## License
 
-Tightwad is provided as-is under the [MIT License](LICENSE). Performance claims are based on our testing and may vary with your hardware, model pairing, network, and configuration. All trademarks are the property of their respective owners.
+Tightwad is provided as-is under the [MIT License](LICENSE). Performance claims are based on our testing and may vary with your hardware, model pairing, network, and configuration.
+
+Tightwad is not affiliated with, endorsed by, or sponsored by NVIDIA, AMD, Apple, Meta, Google, Google DeepMind, Alibaba, OpenAI, Anthropic, Hugging Face, Microsoft, Mistral AI, MiniMax, or any other company referenced in this repository or on tightwad.dev. References to academic publications (Leviathan et al. 2022, Chen et al. 2023, the Google Research retrospective) are nominative-fair-use citations of public work. All trademarks are the property of their respective owners.
