@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Docs
+- Added explicit non-affiliation disclaimers next to the speculative-decoding research citations in the README (under "How Speculative Decoding Works") and on tightwad.dev (inline below the research strip + expanded site footer). Clarifies that Tightwad is independent open-source software with no commercial relationship to Google, Google DeepMind, or the cited authors, and that the references are nominative-fair-use citations of public academic work.
+
 ## [0.5.2] - 2026-04-25
 
 ### Fixed (second-round review)
