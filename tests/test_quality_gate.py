@@ -69,12 +69,34 @@ class TestParseVerdict:
         assert v == Verdict.APPROVE
         assert c is None
 
-    def test_contains_approve_keyword(self):
+    def test_loose_approve_keyword_in_prose_rejects(self):
+        """Strict directive matching: 'I would APPROVE this' is prose, not a
+        verdict directive. Must fail-closed to REJECT under the default."""
         v, c = parse_verdict("I would APPROVE this response.")
+        assert v == Verdict.REJECT, (
+            "Loose substring match would have classified this as APPROVE; "
+            "the strict parser must reject prose without an explicit directive."
+        )
+
+    def test_loose_reject_keyword_in_prose_rejects(self):
+        v, c = parse_verdict("I must REJECT this response due to errors.")
+        assert v == Verdict.REJECT  # ambiguous → fail-closed
+
+    def test_negated_approve_does_not_approve(self):
+        """Regression: 'I cannot approve' contains APPROVE but means REJECT."""
+        v, c = parse_verdict("I cannot approve this output.")
+        assert v == Verdict.REJECT
+
+    def test_verdict_prefix_directive_works(self):
+        """The verifier prompt may ask for a 'VERDICT: ...' line."""
+        v, c = parse_verdict("VERDICT: APPROVE")
         assert v == Verdict.APPROVE
 
-    def test_contains_reject_keyword(self):
-        v, c = parse_verdict("I must REJECT this response due to errors.")
+    def test_verdict_prefix_directive_with_reasoning_above(self):
+        """A leading reasoning line is fine if the next non-empty line is a
+        directive — the parser uses the FIRST non-empty line by design, so a
+        purely prose response still fails-closed."""
+        v, c = parse_verdict("VERDICT: REJECT")
         assert v == Verdict.REJECT
 
     def test_whitespace_stripped(self):

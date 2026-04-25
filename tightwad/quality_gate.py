@@ -127,8 +127,22 @@ REJECT"""
 # ---------------------------------------------------------------------------
 
 
+_DIRECTIVE_RE = re.compile(
+    r"""^\s*(?:VERDICT\s*:\s*)?  # optional VERDICT: prefix
+        (APPROVE|REJECT|CORRECT)  # verdict keyword
+        (?:\s*[:\-]?\s*(.*))?     # optional correction body for CORRECT
+        \s*$""",
+    re.IGNORECASE | re.VERBOSE | re.DOTALL,
+)
+
+
 def parse_verdict(text: str, fail_open: bool = False) -> tuple[Verdict, str | None]:
     """Parse the verifier's response into a verdict and optional correction.
+
+    Strict directive matching: the verdict must come from the first non-empty
+    line, optionally prefixed with ``VERDICT:``. We do this so prose like
+    "I cannot approve this" doesn't get parsed as APPROVE just because it
+    contains the word.
 
     Returns (Verdict, corrected_text_or_None).
 
@@ -137,40 +151,52 @@ def parse_verdict(text: str, fail_open: bool = False) -> tuple[Verdict, str | No
     availability-first behavior of returning APPROVE on parse failure.
     """
     text = text.strip()
+    if not text:
+        return _ambiguous_default(fail_open, "empty verifier output")
 
-    # Check for APPROVE (must be first word or only content)
-    if text.upper().startswith("APPROVE"):
+    # Use the first non-empty line as the directive line; everything after it
+    # is treated as the optional correction body (only used when verdict==CORRECT).
+    lines = text.splitlines()
+    directive_line = ""
+    body = ""
+    for i, line in enumerate(lines):
+        if line.strip():
+            directive_line = line
+            body = "\n".join(lines[i + 1:]).strip()
+            break
+
+    m = _DIRECTIVE_RE.match(directive_line)
+    if not m:
+        return _ambiguous_default(fail_open, f"unparseable directive line: {directive_line!r}")
+
+    verdict_word = m.group(1).upper()
+    inline_body = (m.group(2) or "").strip()
+
+    if verdict_word == "APPROVE":
         return Verdict.APPROVE, None
 
-    # Check for CORRECT: <corrected response>
-    m = re.match(r"CORRECT:\s*(.*)", text, re.DOTALL | re.IGNORECASE)
-    if m:
-        corrected = m.group(1).strip()
-        if corrected:
-            return Verdict.CORRECT, corrected
-        # CORRECT with no content → treat as approve
-        return Verdict.APPROVE, None
-
-    # Check for REJECT
-    if text.upper().startswith("REJECT"):
+    if verdict_word == "REJECT":
         return Verdict.REJECT, None
 
-    # Ambiguous — try to infer from content
-    text_upper = text.upper()
-    if "APPROVE" in text_upper and "REJECT" not in text_upper:
-        return Verdict.APPROVE, None
-    if "REJECT" in text_upper and "APPROVE" not in text_upper:
-        return Verdict.REJECT, None
+    # CORRECT: combine the inline correction with any trailing body lines.
+    if inline_body and body:
+        correction = inline_body + "\n" + body
+    else:
+        correction = inline_body or body
+    if correction:
+        return Verdict.CORRECT, correction
+    # CORRECT with no payload is approval-with-no-edit.
+    return Verdict.APPROVE, None
 
-    # Can't parse — fail closed by default (regenerate on strong model).
-    # Flip fail_open=True for availability-first workloads.
+
+def _ambiguous_default(fail_open: bool, reason: str) -> tuple[Verdict, str | None]:
     if fail_open:
         logger.warning(
-            "Could not parse verdict; fail_open=True so defaulting to APPROVE"
+            "%s; fail_open=True so defaulting to APPROVE", reason,
         )
         return Verdict.APPROVE, None
     logger.warning(
-        "Could not parse verdict; defaulting to REJECT (set fail_open=True to invert)"
+        "%s; defaulting to REJECT (set fail_open=True to invert)", reason,
     )
     return Verdict.REJECT, None
 

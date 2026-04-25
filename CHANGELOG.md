@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-04-25
+
+### Fixed (second-round review)
+- **Quality gate parser is now strict.** Previous loose `if "APPROVE" in text and "REJECT" not in text` would happily classify "I cannot approve this output" as APPROVE. The parser now requires the verdict to come from the first non-empty line of the verifier response, optionally prefixed with `VERDICT:`. Prose without an explicit directive falls into the ambiguous-default path (REJECT under fail-closed, APPROVE under explicit `fail_open=True`).
+- **README docker one-liner now sets `TIGHTWAD_PROXY_TOKEN`.** The quick-start example previously didn't show the token even though `create_app` requires it for non-loopback binds — the on-screen instruction worked when copy-pasted but produced a confusing startup error.
+- **Site copy: consensus mode is labeled "approximate," default mode is labeled "exact."** Previous "the big model has final say on every token" phrasing was true for the default speculative-decoding mode but false for the opt-in consensus mode that skips the target on unanimous draft agreement. Both modes are now clearly distinguished on tightwad.dev with explicit "approximate mode" badge on the consensus card.
+- **Downloads page bumped to 0.5.1 tarball** (the old `tightwad-0.4.2.tar.gz` was replaced; the page also still works at `pip install tightwad` for the always-latest path).
+- **Version sync to 0.5.2** across `pyproject.toml`, `__init__.py`, site footer, downloads page.
+
 ## [0.5.1] - 2026-04-25
 
 ### Fixed (correctness — independent code review)

@@ -155,18 +155,24 @@ Client (OpenAI API)
 The fastest way to get a speculative decoding proxy running. No config files needed — just set your draft and target server URLs:
 
 ```bash
+# Generate a token (required for non-loopback bind — proxy refuses to start without one):
+export TIGHTWAD_PROXY_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
+
 # One-liner with Docker
 docker run --rm --network host \
   -e TIGHTWAD_DRAFT_URL=http://192.168.1.10:11434 \
   -e TIGHTWAD_DRAFT_MODEL=qwen3:8b \
   -e TIGHTWAD_TARGET_URL=http://192.168.1.20:11434 \
   -e TIGHTWAD_TARGET_MODEL=qwen3:32b \
+  -e TIGHTWAD_PROXY_TOKEN="$TIGHTWAD_PROXY_TOKEN" \
   ghcr.io/youngharold/tightwad
 
 # Or with Docker Compose (edit docker-compose.yml with your IPs first)
 docker compose up
 # Logs persist in ./logs/ across restarts
 ```
+
+> **Why the token is required:** v0.5.1 refuses to bind a proxy to a non-loopback host without `TIGHTWAD_PROXY_TOKEN`. The proxy fronts expensive GPU compute — running open on the LAN is a foot-gun. To explicitly opt out, set `TIGHTWAD_ALLOW_UNAUTHENTICATED=true` (not recommended).
 
 > **Mac/Docker Desktop:** Replace `--network host` with `-p 8088:8088` and use `host.docker.internal` instead of LAN IPs.
 
@@ -461,6 +467,7 @@ docker run --rm --network host \
   -e TIGHTWAD_DRAFT_MODEL=qwen3:8b \
   -e TIGHTWAD_TARGET_URL=http://192.168.1.10:11434 \
   -e TIGHTWAD_TARGET_MODEL=qwen3:32b \
+  -e TIGHTWAD_PROXY_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')" \
   ghcr.io/youngharold/tightwad
 ```
 
