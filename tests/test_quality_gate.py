@@ -57,9 +57,17 @@ class TestParseVerdict:
         v, c = parse_verdict("reject")
         assert v == Verdict.REJECT
 
-    def test_ambiguous_defaults_to_approve(self):
+    def test_ambiguous_defaults_to_reject(self):
+        """Default behavior is fail-closed: regenerate when we can't parse."""
         v, c = parse_verdict("I think the response is mostly fine.")
+        assert v == Verdict.REJECT
+        assert c is None
+
+    def test_ambiguous_with_fail_open_defaults_to_approve(self):
+        """Opt-in fail_open preserves the legacy availability-first behavior."""
+        v, c = parse_verdict("I think the response is mostly fine.", fail_open=True)
         assert v == Verdict.APPROVE
+        assert c is None
 
     def test_contains_approve_keyword(self):
         v, c = parse_verdict("I would APPROVE this response.")

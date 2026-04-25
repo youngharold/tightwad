@@ -29,11 +29,11 @@ from tightwad.proxy import TokenAuthMiddleware, create_app
 
 @pytest.fixture
 def base_config():
-    """ProxyConfig without a token — open (backward-compat) mode."""
+    """ProxyConfig without a token — loopback-only is the only auth-less path."""
     return ProxyConfig(
         draft=ServerEndpoint(url="http://draft:8081", model_name="qwen3-8b"),
         target=ServerEndpoint(url="http://target:8080", model_name="qwen3-32b"),
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8088,
         max_draft_tokens=8,
         fallback_on_draft_failure=True,
@@ -205,6 +205,80 @@ class TestAuthEnforcedOnAllEndpoints:
             f"Valid token should not return 401 on POST {path}"
         )
 
+    def test_websocket_blocked_without_token(self, secured_config):
+        """Authenticated proxy must reject WebSocket handshakes without a Bearer token."""
+        from starlette.websockets import WebSocketDisconnect
+        app = create_app(secured_config)
+        client = TestClient(app)
+        with pytest.raises(WebSocketDisconnect) as exc:
+            with client.websocket_connect("/v1/tightwad/ws"):
+                pass
+        # 4401 = our "Unauthorized" close code
+        assert exc.value.code == 4401, (
+            f"Expected close code 4401 on unauth WS, got {exc.value.code}"
+        )
+
+    def test_websocket_passes_with_valid_token(self, secured_config):
+        from starlette.testclient import WebSocketDenialResponse
+        app = create_app(secured_config)
+        client = TestClient(app)
+        # Connect should not be denied with a valid token (the route may close
+        # for application reasons, but it must not return 4401).
+        try:
+            with client.websocket_connect(
+                "/v1/tightwad/ws",
+                headers={"Authorization": "Bearer super-secret-token"},
+            ) as ws:
+                # If we got here, handshake succeeded — that's all we need.
+                pass
+        except Exception as exc:
+            # Any disconnect must NOT carry our auth-rejection code.
+            code = getattr(exc, "code", None)
+            assert code != 4401, "Valid token should not get 4401"
+
+    def test_route_audit_every_route_protected(self, secured_config):
+        """Regression invariant: every route registered on the proxy app must
+        return 401 (HTTP) or close 4401 (WebSocket) when called with no token.
+
+        If a future contributor adds a route and forgets to add it to the
+        explicit ENDPOINTS_GET / ENDPOINTS_POST lists, this test still catches
+        the bypass.
+        """
+        from starlette.routing import Route, WebSocketRoute
+        from starlette.websockets import WebSocketDisconnect
+        app = create_app(secured_config)
+        client = TestClient(app)
+
+        unprotected: list[str] = []
+        for route in app.routes:
+            if isinstance(route, WebSocketRoute):
+                try:
+                    with client.websocket_connect(route.path):
+                        unprotected.append(f"WS {route.path}")
+                except WebSocketDisconnect as exc:
+                    if exc.code != 4401:
+                        unprotected.append(f"WS {route.path} closed {exc.code} (not 4401)")
+                except Exception:
+                    pass
+            elif isinstance(route, Route):
+                methods = route.methods or {"GET"}
+                # Skip the chat UI / dashboard browser routes — they're meant
+                # to be reachable for the user's browser. Auth is at the API
+                # layer.
+                if route.path in ("/", "/dashboard"):
+                    continue
+                method = "POST" if "POST" in methods else "GET"
+                if method == "GET":
+                    resp = client.get(route.path)
+                else:
+                    resp = client.post(route.path, json={"prompt": "x", "max_tokens": 1})
+                if resp.status_code != 401:
+                    unprotected.append(f"{method} {route.path} returned {resp.status_code}")
+
+        assert not unprotected, (
+            f"Routes bypassing auth: {unprotected}. Update auth middleware."
+        )
+
 
 # ---------------------------------------------------------------------------
 # Backward compatibility: no token = open proxy
@@ -212,7 +286,7 @@ class TestAuthEnforcedOnAllEndpoints:
 
 
 class TestBackwardCompatibility:
-    """When no token is configured, the proxy works without authentication."""
+    """When no token is configured AND host is loopback, the proxy works without authentication."""
 
     def test_models_endpoint_open_without_token(self, base_config):
         app = create_app(base_config)
@@ -225,6 +299,40 @@ class TestBackwardCompatibility:
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.get("/v1/tightwad/status")
         assert resp.status_code == 200
+
+
+class TestUnauthenticatedLanBindRefused:
+    """Refuse to start an unauthenticated proxy on a non-loopback host."""
+
+    def _config(self, host="0.0.0.0", token=None):
+        return ProxyConfig(
+            draft=ServerEndpoint(url="http://draft:8081", model_name="d"),
+            target=ServerEndpoint(url="http://target:8080", model_name="t"),
+            host=host, port=8088, max_draft_tokens=8,
+            fallback_on_draft_failure=True, auth_token=token,
+        )
+
+    def test_refuses_0_0_0_0_without_token(self):
+        with pytest.raises(ValueError, match="non-loopback"):
+            create_app(self._config(host="0.0.0.0", token=None))
+
+    def test_refuses_lan_ip_without_token(self):
+        with pytest.raises(ValueError, match="non-loopback"):
+            create_app(self._config(host="192.168.1.10", token=None))
+
+    def test_allows_loopback_without_token(self):
+        # Should not raise.
+        create_app(self._config(host="127.0.0.1", token=None))
+
+    def test_allows_localhost_without_token(self):
+        create_app(self._config(host="localhost", token=None))
+
+    def test_allows_lan_with_token(self):
+        create_app(self._config(host="0.0.0.0", token="some-secret"))
+
+    def test_explicit_opt_out_env_var_allows_lan(self, monkeypatch):
+        monkeypatch.setenv("TIGHTWAD_ALLOW_UNAUTHENTICATED", "true")
+        create_app(self._config(host="0.0.0.0", token=None))
 
 
 # ---------------------------------------------------------------------------

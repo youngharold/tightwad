@@ -63,16 +63,27 @@ class TokenAuthMiddleware:
         self.token = token
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        # Only enforce auth on HTTP requests; let lifespan/websocket through.
-        if scope["type"] != "http" or not self.token:
+        # Lifespan never carries a request, no auth applies.
+        if scope["type"] == "lifespan" or not self.token:
             await self.app(scope, receive, send)
             return
 
-        request = Request(scope)
-        auth_header = request.headers.get("authorization", "")
-        expected = f"Bearer {self.token}"
+        if scope["type"] not in ("http", "websocket"):
+            await self.app(scope, receive, send)
+            return
 
+        auth_header = ""
+        for name, value in scope.get("headers", []):
+            if name == b"authorization":
+                auth_header = value.decode("latin-1")
+                break
+
+        expected = f"Bearer {self.token}"
         if not hmac.compare_digest(auth_header, expected):
+            if scope["type"] == "websocket":
+                # ASGI WebSocket reject: send a 401-like close before accept.
+                await send({"type": "websocket.close", "code": 4401, "reason": "Unauthorized"})
+                return
             response = Response(
                 content='{"detail":"Unauthorized"}',
                 status_code=401,
@@ -615,31 +626,32 @@ class SpeculativeProxy:
     async def verify_with_logprobs(
         self, prompt: str, draft_tokens: list[DraftToken], temperature: float = 0.0
     ) -> VerificationResult:
-        """Verify draft tokens via prompt-append batch verification.
+        """Verify draft tokens with per-position target argmax comparison.
 
-        Appends draft text to the prompt so the target processes draft tokens
-        as prompt (parallel evaluation) rather than generating them one-by-one.
-        KV cache means only new draft tokens are evaluated each round.
+        For every draft round we ask the target to generate ``N+1`` tokens
+        from the base prompt with logprobs at each position. The first
+        ``N`` target argmax tokens are compared to the draft proposals
+        (matching prefix accepted, first mismatch becomes the resample
+        token); the ``N+1``th is the bonus token.
 
-        Generates N+1 tokens with logprobs from the base prompt to compare
-        token IDs. Falls back to prompt-append mode when the target supports
-        fast prompt evaluation.
+        This is the canonical Leviathan / Chen verification path. It costs
+        ``N+1`` autoregressive forward passes on the target instead of the
+        single prompt-append shortcut the previous implementation used —
+        but the previous shortcut accepted draft tokens unconditionally on
+        same-family pairs, which broke the equivalence guarantee documented
+        in the README. Correctness over micro-optimization.
 
         Returns VerificationResult with accepted/rejected tokens.
         """
         n_draft = len(draft_tokens)
-        draft_text = "".join(t.text for t in draft_tokens)
+        empty = VerificationResult(
+            accepted_tokens=[], bonus_token=None, accepted_count=0,
+            rejected_at=0, resample_token=DraftToken(token_id=0, logprob=0.0, text=""),
+        )
 
-        # Prompt-append verification: feed draft text as prompt, generate 1 token.
-        # Draft tokens are processed in parallel during prompt evaluation (~2x faster
-        # than autoregressive generation). We then compare what the target generates
-        # from the base prompt to find the first disagreement.
-        #
-        # Step 1: Target generates N+1 tokens from base prompt with logprobs
-        # to do per-position comparison.
         body: dict = {
-            "prompt": prompt + draft_text,
-            "max_tokens": 1,
+            "prompt": prompt,
+            "max_tokens": n_draft + 1,
             "temperature": temperature,
             "logprobs": True,
             "stream": False,
@@ -651,134 +663,48 @@ class SpeculativeProxy:
             data = resp.json()
         except Exception:
             logger.warning("Verify response was not valid JSON, returning empty result")
-            return VerificationResult(
-                accepted_tokens=[], bonus_token=None, accepted_count=0,
-                rejected_at=0, resample_token=DraftToken(token_id=0, logprob=0.0, text=""),
-            )
+            return empty
 
         choice = data["choices"][0]
-        bonus_text = choice.get("text", "")
-        logprobs_data = choice.get("logprobs", {})
-        content = logprobs_data.get("content", [])
+        content = choice.get("logprobs", {}).get("content", [])
+        if not content:
+            return empty
 
-        # Same-family models share tokenizers, so tokenization always matches.
-        # Skip the two /tokenize round trips (2-6ms saved per round) when
-        # family validation has confirmed the match at startup.
-        tokenization_matches = self._same_family
+        target_logprobs: list[TargetLogprob] = []
+        for i, entry in enumerate(content):
+            top_token_id = entry.get("id", 0)
+            top_logprob = entry.get("logprob", -100.0)
+            top_token_text = entry.get("token", "")
 
-        if not tokenization_matches:
-            # Fall back to tokenize comparison for unknown/mixed families
-            tok_resp = await self.target_client.post("/tokenize", json={"content": draft_text})
-            tok_resp.raise_for_status()
-            try:
-                target_token_ids = tok_resp.json().get("tokens", [])
-            except Exception:
-                logger.warning("Target /tokenize response was not valid JSON, assuming mismatch")
-                target_token_ids = []
-
-            draft_tok_resp = await self.draft_client.post("/tokenize", json={"content": draft_text})
-            draft_tok_resp.raise_for_status()
-            try:
-                draft_token_ids = draft_tok_resp.json().get("tokens", [])
-            except Exception:
-                logger.warning("Draft /tokenize response was not valid JSON, assuming mismatch")
-                draft_token_ids = []
-
-            n_match = 0
-            for i in range(min(len(target_token_ids), len(draft_token_ids))):
-                if target_token_ids[i] == draft_token_ids[i]:
-                    n_match += 1
+            draft_token_lp = None
+            if i < n_draft:
+                if draft_tokens[i].token_id == top_token_id:
+                    draft_token_lp = top_logprob
                 else:
-                    break
+                    for alt in entry.get("top_logprobs", []):
+                        if alt.get("id") == draft_tokens[i].token_id:
+                            draft_token_lp = alt.get("logprob")
+                            break
 
-            tokenization_matches = (
-                n_match == len(draft_token_ids) and n_match == len(target_token_ids)
-            )
+            target_logprobs.append(TargetLogprob(
+                token_id=top_token_id,
+                logprob=top_logprob,
+                draft_token_logprob=draft_token_lp,
+            ))
+            target_logprobs[-1]._text = top_token_text  # type: ignore[attr-defined]
 
-        if tokenization_matches:
-            # All draft tokens accepted — bonus token is what target generates next
-            bonus_token = None
-            if content:
-                entry = content[0]
-                bonus_token = DraftToken(
-                    token_id=entry.get("id", 0),
-                    logprob=entry.get("logprob", 0.0),
-                    text=entry.get("token", bonus_text),
-                )
+        result = verify_draft_tokens(draft_tokens, target_logprobs, temperature)
 
-            return VerificationResult(
-                accepted_tokens=list(draft_tokens),
-                bonus_token=bonus_token,
-                accepted_count=n_draft,
-                rejected_at=None,
-                resample_token=None,
-            )
-        else:
-            # Tokenization diverged — fall back to generating from base prompt
-            # to find the exact rejection point
-            fallback_body: dict = {
-                "prompt": prompt,
-                "max_tokens": n_draft + 1,
-                "temperature": temperature,
-                "logprobs": True,
-                "stream": False,
-                "id_slot": 0,
-            }
-            resp2 = await self.target_client.post("/v1/completions", json=fallback_body)
-            resp2.raise_for_status()
-            try:
-                data2 = resp2.json()
-            except Exception:
-                logger.warning("Verify fallback response was not valid JSON, returning empty result")
-                return VerificationResult(
-                    accepted_tokens=[], bonus_token=None, accepted_count=0,
-                    rejected_at=0, resample_token=DraftToken(token_id=0, logprob=0.0, text=""),
-                )
+        if result.resample_token is not None and result.rejected_at is not None:
+            idx = result.rejected_at
+            if idx < len(target_logprobs):
+                result.resample_token.text = getattr(target_logprobs[idx], '_text', '')
+        if result.bonus_token is not None:
+            idx = n_draft
+            if idx < len(target_logprobs):
+                result.bonus_token.text = getattr(target_logprobs[idx], '_text', '')
 
-            choice2 = data2["choices"][0]
-            content2 = choice2.get("logprobs", {}).get("content", [])
-
-            if not content2:
-                return VerificationResult(
-                    accepted_tokens=[], bonus_token=None, accepted_count=0, rejected_at=0,
-                    resample_token=DraftToken(token_id=0, logprob=0.0, text=""),
-                )
-
-            target_logprobs: list[TargetLogprob] = []
-            for i, entry in enumerate(content2):
-                top_token_id = entry.get("id", 0)
-                top_logprob = entry.get("logprob", -100.0)
-                top_token_text = entry.get("token", "")
-
-                draft_token_lp = None
-                if i < n_draft:
-                    if draft_tokens[i].token_id == top_token_id:
-                        draft_token_lp = top_logprob
-                    else:
-                        for alt in entry.get("top_logprobs", []):
-                            if alt.get("id") == draft_tokens[i].token_id:
-                                draft_token_lp = alt.get("logprob")
-                                break
-
-                target_logprobs.append(TargetLogprob(
-                    token_id=top_token_id,
-                    logprob=top_logprob,
-                    draft_token_logprob=draft_token_lp,
-                ))
-                target_logprobs[-1]._text = top_token_text  # type: ignore[attr-defined]
-
-            result = verify_draft_tokens(draft_tokens, target_logprobs, temperature)
-
-            if result.resample_token is not None and result.rejected_at is not None:
-                idx = result.rejected_at
-                if idx < len(target_logprobs):
-                    result.resample_token.text = getattr(target_logprobs[idx], '_text', '')
-            if result.bonus_token is not None:
-                idx = n_draft
-                if idx < len(target_logprobs):
-                    result.bonus_token.text = getattr(target_logprobs[idx], '_text', '')
-
-            return result
+        return result
 
     async def verify_text_match(
         self, prompt: str, draft_text: str, temperature: float = 0.0
@@ -1771,6 +1697,13 @@ async def handle_chat_ui(request: Request):
     return HTMLResponse(CHAT_HTML)
 
 
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "0:0:0:0:0:0:0:1"}
+
+
+def _is_loopback(host: str) -> bool:
+    return host.lower() in _LOOPBACK_HOSTS
+
+
 def create_app(config: ProxyConfig) -> Starlette:
     """Create and configure the proxy ASGI application.
 
@@ -1781,7 +1714,27 @@ def create_app(config: ProxyConfig) -> Starlette:
         ``None``), a warning is logged and the previous instance is replaced.
         Call :func:`reset_proxy_state` between calls to make re-initialization
         explicit and avoid accidental stale-state bugs.
+
+    .. note::
+        Refuses to construct an unauthenticated proxy bound to a non-loopback
+        host. The proxy fronts expensive GPU compute; LAN exposure without a
+        token is a foot-gun. Set ``proxy.auth_token`` (or
+        ``TIGHTWAD_PROXY_TOKEN``) to allow LAN binding, OR set
+        ``TIGHTWAD_ALLOW_UNAUTHENTICATED=true`` to acknowledge the risk.
     """
+    if (
+        not config.auth_token
+        and not _is_loopback(config.host)
+        and os.environ.get("TIGHTWAD_ALLOW_UNAUTHENTICATED", "").lower() != "true"
+    ):
+        raise ValueError(
+            f"Refusing to start: host={config.host!r} is non-loopback and no "
+            f"auth_token is configured. Either set TIGHTWAD_PROXY_TOKEN, add "
+            f"auth_token to cluster.yaml, bind to 127.0.0.1, OR set "
+            f"TIGHTWAD_ALLOW_UNAUTHENTICATED=true to acknowledge that the "
+            f"proxy will be open to anyone on the network."
+        )
+
     global _proxy
     if _proxy is not None:
         logger.warning(

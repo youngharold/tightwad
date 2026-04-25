@@ -20,7 +20,7 @@ def proxy_config():
     return ProxyConfig(
         draft=ServerEndpoint(url="http://draft:8081", model_name="qwen3-8b"),
         target=ServerEndpoint(url="http://target:8080", model_name="qwen3-32b"),
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8088,
         max_draft_tokens=8,
         fallback_on_draft_failure=True,

@@ -566,6 +566,7 @@ def load_config(path: str | Path | None = None) -> ClusterConfig:
             host=qg.get("host", "0.0.0.0"),
             port=qg.get("port", 8088),
             auth_token=qg.get("auth_token") or os.environ.get("TIGHTWAD_PROXY_TOKEN"),
+            fail_open=qg.get("fail_open", False),
         )
 
     ram_reclaim = raw.get("ram_reclaim", "auto")

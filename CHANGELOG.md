@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-04-25
+
+### Fixed (correctness — independent code review)
+- **`verify_with_logprobs`** (issue #1) now does real per-position argmax comparison. The previous "same-family fast path" requested `max_tokens: 1` and unconditionally accepted every draft token, which made acceptance benchmarks tautological and broke the Leviathan greedy-equivalence guarantee that the docs claimed. The path now requests `max_tokens: N+1`, compares draft tokens to target argmax at each position, and accepts the matching prefix only. **Behavior change:** previously published acceptance numbers were artifacts of the broken path; output is now mathematically identical to the target alone under greedy decoding (the actual Leviathan guarantee). Wall-clock 1.86× on 70B-pooled remains real.
+- **Quality gate** (issue #2) now fails CLOSED on unparseable verifier output (`Verdict.REJECT` → regenerate on the strong model) instead of fail-open APPROVE. Add `quality_gate.fail_open: true` to opt back into legacy availability-first behavior.
+- **Auth bind safeguard** (issue #3) — `create_app` refuses to construct a proxy bound to a non-loopback host without `auth_token`. Bypass with `TIGHTWAD_ALLOW_UNAUTHENTICATED=true`. `docker-compose.yml` example now requires `TIGHTWAD_PROXY_TOKEN`.
+- **WebSocket auth** (issue #4) — `TokenAuthMiddleware` now also enforces Bearer-token auth on WebSocket handshakes (close code 4401 on unauth). Regression test iterates every registered route and asserts auth applies.
+
+### Fixed (hygiene)
+- **Version mismatch** (issue #5) — `tightwad/__init__.py` was stuck at `0.4.2` while PyPI shipped `0.5.0`; the website footer also showed `v0.4.2`. All three now read `0.5.1`.
+
 ## [0.5.0] - 2026-04-19
 
 ### Added

@@ -17,6 +17,12 @@ services:
       TIGHTWAD_TARGET_BACKEND: "ollama"
       TIGHTWAD_PORT: "8088"
       TIGHTWAD_MAX_DRAFT_TOKENS: "32"
+      # REQUIRED when binding to a non-loopback host (host network mode or
+      # external port mapping). Generate with:
+      #   python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+      # To run unauthenticated anyway (NOT recommended), set
+      # TIGHTWAD_ALLOW_UNAUTHENTICATED=true and remove this var.
+      TIGHTWAD_PROXY_TOKEN: "${TIGHTWAD_PROXY_TOKEN:?set TIGHTWAD_PROXY_TOKEN in your env or .env file}"
     volumes:
       - ./logs:/root/.tightwad/logs    # persist proxy logs across restarts
     healthcheck:

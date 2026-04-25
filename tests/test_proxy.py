@@ -17,7 +17,7 @@ def proxy_config():
     return ProxyConfig(
         draft=ServerEndpoint(url="http://draft:8081", model_name="qwen3-8b"),
         target=ServerEndpoint(url="http://target:8080", model_name="qwen3-32b"),
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8088,
         max_draft_tokens=8,
         fallback_on_draft_failure=True,
@@ -104,7 +104,7 @@ class TestLogprobsVerification:
         return ProxyConfig(
             draft=ServerEndpoint(url="http://draft:8081", model_name="qwen3-8b", backend="llamacpp"),
             target=ServerEndpoint(url="http://target:8080", model_name="qwen3-32b", backend="llamacpp"),
-            host="0.0.0.0",
+            host="127.0.0.1",
             port=8088,
             max_draft_tokens=4,
         )
@@ -131,7 +131,7 @@ class TestLogprobsVerification:
 
     @pytest.mark.asyncio
     async def test_verify_with_logprobs_all_accepted(self, llamacpp_config):
-        """When target agrees with all draft tokens, get accepted + bonus."""
+        """When target argmax matches every draft token, accept all + bonus."""
         proxy = SpeculativeProxy(llamacpp_config)
 
         draft_tokens = [
@@ -140,29 +140,21 @@ class TestLogprobsVerification:
             DraftToken(token_id=300, logprob=-0.15, text=" is"),
         ]
 
-        # Target generates bonus token after verifying draft via prompt-append
+        # Per-position verification: target generates N+1 tokens from base
+        # prompt; argmax at each position matches the draft, so all accepted.
         completion_resp = MagicMock()
         completion_resp.status_code = 200
         completion_resp.raise_for_status = MagicMock()
         completion_resp.json.return_value = {
-            "choices": [{"text": " 42", "logprobs": {"content": [
-                {"id": 400, "token": " 42", "logprob": -0.3},
+            "choices": [{"logprobs": {"content": [
+                {"id": 100, "token": "The", "logprob": -0.05},
+                {"id": 200, "token": " answer", "logprob": -0.10},
+                {"id": 300, "token": " is", "logprob": -0.12},
+                {"id": 400, "token": " 42", "logprob": -0.30},
             ]}}]
         }
 
-        # Both tokenizers return matching IDs (same-family models)
-        tokenize_resp = MagicMock()
-        tokenize_resp.status_code = 200
-        tokenize_resp.raise_for_status = MagicMock()
-        tokenize_resp.json.return_value = {"tokens": [100, 200, 300]}
-
-        async def target_side_effect(url, **kwargs):
-            if "/tokenize" in url:
-                return tokenize_resp
-            return completion_resp
-
-        proxy.target_client.post = AsyncMock(side_effect=target_side_effect)
-        proxy.draft_client.post = AsyncMock(return_value=tokenize_resp)
+        proxy.target_client.post = AsyncMock(return_value=completion_resp)
 
         result = await proxy.verify_with_logprobs("prompt text", draft_tokens, temperature=0.0)
 
@@ -170,6 +162,49 @@ class TestLogprobsVerification:
         assert result.rejected_at is None
         assert result.bonus_token is not None
         assert result.bonus_token.token_id == 400
+        assert result.bonus_token.text == " 42"
+
+        await proxy.close()
+
+    @pytest.mark.asyncio
+    async def test_verify_with_logprobs_rejects_at_first_mismatch_same_family(
+        self, llamacpp_config,
+    ):
+        """Regression test for the GPT-5 review: when same-family draft and
+        target disagree at position 2, the proxy must NOT accept all tokens."""
+        proxy = SpeculativeProxy(llamacpp_config)
+        proxy._same_family = True  # legacy fast-path used to no-op here
+
+        draft_tokens = [
+            DraftToken(token_id=100, logprob=-0.1, text="The"),
+            DraftToken(token_id=200, logprob=-0.2, text=" answer"),
+            DraftToken(token_id=300, logprob=-0.15, text=" is"),
+        ]
+
+        # Target argmax disagrees at position 2 (999 instead of 300).
+        completion_resp = MagicMock()
+        completion_resp.status_code = 200
+        completion_resp.raise_for_status = MagicMock()
+        completion_resp.json.return_value = {
+            "choices": [{"logprobs": {"content": [
+                {"id": 100, "token": "The", "logprob": -0.05},
+                {"id": 200, "token": " answer", "logprob": -0.10},
+                {"id": 999, "token": " was", "logprob": -0.08},  # <-- mismatch
+                {"id": 400, "token": " 42", "logprob": -0.30},
+            ]}}]
+        }
+        proxy.target_client.post = AsyncMock(return_value=completion_resp)
+
+        result = await proxy.verify_with_logprobs("prompt", draft_tokens, temperature=0.0)
+
+        assert result.accepted_count == 2, (
+            "Same-family fast path is back — verify_with_logprobs must "
+            "compare argmax per position, not blindly accept the draft."
+        )
+        assert result.rejected_at == 2
+        assert result.resample_token is not None
+        assert result.resample_token.token_id == 999
+        assert result.resample_token.text == " was"
 
         await proxy.close()
 
@@ -184,30 +219,10 @@ class TestLogprobsVerification:
             DraftToken(token_id=300, logprob=-0.15, text=" is"),
         ]
 
-        # Prompt-append completion response (used first)
         completion_resp = MagicMock()
         completion_resp.status_code = 200
         completion_resp.raise_for_status = MagicMock()
         completion_resp.json.return_value = {
-            "choices": [{"text": "", "logprobs": {"content": []}}]
-        }
-
-        # Target tokenizer returns different IDs — triggers fallback path
-        target_tok_resp = MagicMock()
-        target_tok_resp.status_code = 200
-        target_tok_resp.raise_for_status = MagicMock()
-        target_tok_resp.json.return_value = {"tokens": [100, 200, 999]}
-
-        draft_tok_resp = MagicMock()
-        draft_tok_resp.status_code = 200
-        draft_tok_resp.raise_for_status = MagicMock()
-        draft_tok_resp.json.return_value = {"tokens": [100, 200, 300]}
-
-        # Fallback: target generates N+1 tokens from base prompt
-        fallback_resp = MagicMock()
-        fallback_resp.status_code = 200
-        fallback_resp.raise_for_status = MagicMock()
-        fallback_resp.json.return_value = {
             "choices": [{"logprobs": {"content": [
                 {"id": 100, "token": "The", "logprob": -0.05},
                 {"id": 200, "token": " answer", "logprob": -0.1},
@@ -215,16 +230,7 @@ class TestLogprobsVerification:
                 {"id": 400, "token": " 42", "logprob": -0.3},
             ]}}]
         }
-
-        # target_client.post is called 3 times:
-        # 1) /v1/completions (prompt-append), 2) /tokenize, 3) /v1/completions (fallback)
-        target_calls = iter([completion_resp, target_tok_resp, fallback_resp])
-
-        async def target_side_effect(url, **kwargs):
-            return next(target_calls)
-
-        proxy.target_client.post = AsyncMock(side_effect=target_side_effect)
-        proxy.draft_client.post = AsyncMock(return_value=draft_tok_resp)
+        proxy.target_client.post = AsyncMock(return_value=completion_resp)
 
         result = await proxy.verify_with_logprobs("prompt", draft_tokens, temperature=0.0)
 

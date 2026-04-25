@@ -41,7 +41,7 @@ def proxy_config():
     return ProxyConfig(
         draft=ServerEndpoint(url="http://draft:8081", model_name="qwen3-8b"),
         target=ServerEndpoint(url="http://target:8080", model_name="qwen3-32b"),
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8088,
         max_draft_tokens=8,
         fallback_on_draft_failure=True,
@@ -54,6 +54,7 @@ def low_limit_config():
     return ProxyConfig(
         draft=ServerEndpoint(url="http://draft:8081", model_name="qwen3-8b"),
         target=ServerEndpoint(url="http://target:8080", model_name="qwen3-32b"),
+        host="127.0.0.1",
         max_tokens_limit=100,
         max_body_size=512,
     )
@@ -800,7 +801,7 @@ class TestProxyConfigLimits:
         """proxy.max_tokens_limit in cluster.yaml is loaded."""
         cfg = {
             "coordinator": {
-                "host": "0.0.0.0",
+                "host": "127.0.0.1",
                 "port": 8080,
                 "backend": "hip",
                 "gpus": [{"name": "XTX", "vram_gb": 24}],
@@ -822,7 +823,7 @@ class TestProxyConfigLimits:
         """proxy.max_body_size in cluster.yaml is loaded."""
         cfg = {
             "coordinator": {
-                "host": "0.0.0.0",
+                "host": "127.0.0.1",
                 "port": 8080,
                 "backend": "hip",
                 "gpus": [{"name": "XTX", "vram_gb": 24}],
@@ -844,7 +845,7 @@ class TestProxyConfigLimits:
         """When limits are absent from YAML, defaults apply."""
         cfg = {
             "coordinator": {
-                "host": "0.0.0.0",
+                "host": "127.0.0.1",
                 "port": 8080,
                 "backend": "hip",
                 "gpus": [{"name": "XTX", "vram_gb": 24}],

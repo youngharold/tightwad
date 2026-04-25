@@ -31,7 +31,7 @@ def _llamacpp_config(**overrides) -> ProxyConfig:
     defaults = dict(
         draft=ServerEndpoint(url="http://draft:8081", model_name="draft-model", backend="llamacpp"),
         target=ServerEndpoint(url="http://target:8080", model_name="target-model", backend="llamacpp"),
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8088,
         max_draft_tokens=4,
         fallback_on_draft_failure=True,
@@ -45,7 +45,7 @@ def _ollama_config(**overrides) -> ProxyConfig:
     defaults = dict(
         draft=ServerEndpoint(url="http://draft:11434", model_name="draft-model", backend="ollama"),
         target=ServerEndpoint(url="http://target:11434", model_name="target-model", backend="ollama"),
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8088,
         max_draft_tokens=4,
         fallback_on_draft_failure=True,
@@ -64,9 +64,9 @@ class TestSpeculationRoundLogprobs:
 
     @pytest.mark.asyncio
     async def test_speculation_round_logprobs_all_accepted(self):
-        """Draft returns 3 tokens, target agrees with all -> 3 accepted + bonus."""
+        """Draft returns 3 tokens, target argmax matches all -> 3 accepted + bonus."""
         proxy = SpeculativeProxy(_llamacpp_config())
-        proxy._same_family = True  # skip tokenize round trips
+        proxy._same_family = True
 
         # Draft response: 3 tokens with logprobs
         draft_resp = _make_response(json_data={
@@ -78,10 +78,13 @@ class TestSpeculationRoundLogprobs:
         })
         proxy.draft_client.post = AsyncMock(return_value=draft_resp)
 
-        # Target: prompt-append verification succeeds (same family), bonus token
+        # Per-position verify: target generates N+1 tokens; argmax matches draft
         target_resp = _make_response(json_data={
-            "choices": [{"text": " 42", "logprobs": {"content": [
-                {"id": 400, "token": " 42", "logprob": -0.3},
+            "choices": [{"logprobs": {"content": [
+                {"id": 100, "token": "The", "logprob": -0.05},
+                {"id": 200, "token": " answer", "logprob": -0.10},
+                {"id": 300, "token": " is", "logprob": -0.12},
+                {"id": 400, "token": " 42", "logprob": -0.30},
             ]}}],
         })
         proxy.target_client.post = AsyncMock(return_value=target_resp)
@@ -103,9 +106,9 @@ class TestSpeculationRoundLogprobs:
 
     @pytest.mark.asyncio
     async def test_speculation_round_logprobs_partial_reject(self):
-        """Draft returns 3 tokens, target disagrees at position 2 -> accept 2 + resample."""
+        """Draft returns 3 tokens, target argmax disagrees at position 2 -> accept 2 + resample."""
         proxy = SpeculativeProxy(_llamacpp_config())
-        proxy._same_family = False  # force tokenize comparison
+        proxy._same_family = True
 
         # Draft response: 3 tokens
         draft_resp = _make_response(json_data={
@@ -117,16 +120,8 @@ class TestSpeculationRoundLogprobs:
         })
         proxy.draft_client.post = AsyncMock(return_value=draft_resp)
 
-        # 1. prompt-append completion (no useful content - empty)
-        prompt_append_resp = _make_response(json_data={
-            "choices": [{"text": "", "logprobs": {"content": []}}],
-        })
-        # 2. Target tokenize: tokens differ at position 2
-        target_tok_resp = _make_response(json_data={"tokens": [100, 200, 999]})
-        # 3. Draft tokenize
-        draft_tok_resp = _make_response(json_data={"tokens": [100, 200, 300]})
-        # 4. Fallback: target generates N+1 tokens from base prompt
-        fallback_resp = _make_response(json_data={
+        # Target argmax disagrees at position 2 (999 instead of 300).
+        target_resp = _make_response(json_data={
             "choices": [{"logprobs": {"content": [
                 {"id": 100, "token": "The", "logprob": -0.05},
                 {"id": 200, "token": " answer", "logprob": -0.1},
@@ -134,24 +129,7 @@ class TestSpeculationRoundLogprobs:
                 {"id": 400, "token": " 42", "logprob": -0.3},
             ]}}],
         })
-
-        # target_client.post calls:
-        # 1) /v1/completions (prompt-append)
-        # 2) /tokenize
-        # 3) /v1/completions (fallback)
-        target_calls = iter([prompt_append_resp, target_tok_resp, fallback_resp])
-
-        async def target_side_effect(url, **kwargs):
-            return next(target_calls)
-
-        proxy.target_client.post = AsyncMock(side_effect=target_side_effect)
-        # draft_client.post: first call is draft, second is /tokenize
-        draft_post_calls = iter([draft_resp, draft_tok_resp])
-
-        async def draft_side_effect(url, **kwargs):
-            return next(draft_post_calls)
-
-        proxy.draft_client.post = AsyncMock(side_effect=draft_side_effect)
+        proxy.target_client.post = AsyncMock(return_value=target_resp)
 
         accepted_text, is_done, draft_ms, verify_ms = await proxy.speculation_round(
             "What is the meaning of life?", temperature=0.0,

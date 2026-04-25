@@ -68,6 +68,10 @@ class QualityGateConfig:
     host: str = "0.0.0.0"
     port: int = 8088
     auth_token: str | None = None
+    #: When the verifier returns an unparseable verdict, default to REJECT
+    #: (regenerate on the strong model). Flip to True only if availability
+    #: matters more than correctness for the workload.
+    fail_open: bool = False
 
 
 @dataclass
@@ -123,10 +127,14 @@ REJECT"""
 # ---------------------------------------------------------------------------
 
 
-def parse_verdict(text: str) -> tuple[Verdict, str | None]:
+def parse_verdict(text: str, fail_open: bool = False) -> tuple[Verdict, str | None]:
     """Parse the verifier's response into a verdict and optional correction.
 
     Returns (Verdict, corrected_text_or_None).
+
+    When the verifier output cannot be parsed, default to REJECT (regenerate
+    on the strong model). Pass ``fail_open=True`` to keep the legacy
+    availability-first behavior of returning APPROVE on parse failure.
     """
     text = text.strip()
 
@@ -154,9 +162,17 @@ def parse_verdict(text: str) -> tuple[Verdict, str | None]:
     if "REJECT" in text_upper and "APPROVE" not in text_upper:
         return Verdict.REJECT, None
 
-    # Can't parse — default to approve (fail-open for availability)
-    logger.warning("Could not parse verdict from verifier response, defaulting to APPROVE")
-    return Verdict.APPROVE, None
+    # Can't parse — fail closed by default (regenerate on strong model).
+    # Flip fail_open=True for availability-first workloads.
+    if fail_open:
+        logger.warning(
+            "Could not parse verdict; fail_open=True so defaulting to APPROVE"
+        )
+        return Verdict.APPROVE, None
+    logger.warning(
+        "Could not parse verdict; defaulting to REJECT (set fail_open=True to invert)"
+    )
+    return Verdict.REJECT, None
 
 
 # ---------------------------------------------------------------------------
@@ -296,7 +312,7 @@ class QualityGateProxy:
             verifier_text = resp.json()["choices"][0].get("text", "")
 
         verify_ms = (time.monotonic() - t0) * 1000
-        verdict, corrected = parse_verdict(verifier_text)
+        verdict, corrected = parse_verdict(verifier_text, fail_open=self.config.fail_open)
 
         return VerificationResult(
             verdict=verdict,
