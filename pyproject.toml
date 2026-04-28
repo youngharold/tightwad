@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tightwad"
-version = "0.5.2"
+version = "0.5.3"
 description = "Mixed-vendor GPU inference cluster manager with speculative decoding"
 readme = "README.md"
 license = {text = "MIT"}

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-04-27
+
+### Fixed (privacy / metadata scrub)
+- LICENSE copyright line: was `Copyright (c) 2026 Akiva Solutions`, now `Copyright (c) 2026 youngharold`. This was embedded in every release tarball on PyPI back through 0.4.0; new 0.5.3 release ships clean. Older releases (0.5.2 and earlier) yanked from PyPI.
+- README MoE config example renamed from `cluster-akiva-gptoss.yaml` to `cluster-rocm-gptoss.yaml`; benchmark report scrubbed.
+- In-repo `index.html` GitHub-Pages doc: all `github.com/akivasolutions/tightwad` URLs swapped to `github.com/youngharold/tightwad`.
+
 ### Docs
 - Added explicit non-affiliation disclaimers next to the speculative-decoding research citations in the README (under "How Speculative Decoding Works") and on tightwad.dev (inline below the research strip + expanded site footer). Clarifies that Tightwad is independent open-source software with no commercial relationship to Google, Google DeepMind, or the cited authors, and that the references are nominative-fair-use citations of public academic work.
 
