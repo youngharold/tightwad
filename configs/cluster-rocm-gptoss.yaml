@@ -1,6 +1,6 @@
-# GPT-OSS 120B: Akiva (2x XTX + CPU offload) + speculative decoding (desktop 4070 draft)
-# Target: 48 GB VRAM + CPU offload on akiva
-# Draft: GPT-OSS 20B on desktop 4070
+# GPT-OSS 120B on a dual-XTX ROCm box + speculative decoding (4070 draft)
+# Target: 48 GB VRAM (2x RX 7900 XTX) + CPU offload on the ROCm coordinator
+# Draft: GPT-OSS 20B on a separate desktop with an RTX 4070
 
 coordinator:
   host: 0.0.0.0
@@ -13,7 +13,7 @@ coordinator:
       vram_gb: 24
   extra_args: ["--no-mmap", "--no-warmup", "-ub", "2048", "-b", "2048", "--np", "1"]
   env:
-    LD_LIBRARY_PATH: "/home/akiva/llama.cpp/build/bin"
+    LD_LIBRARY_PATH: "/opt/llama.cpp/build/bin"
 
 workers: []
 
@@ -40,7 +40,7 @@ proxy:
     backend: llamacpp
 
 binaries:
-  coordinator: /home/akiva/llama.cpp/build/bin/llama-server
-  rpc_server: /home/akiva/llama.cpp/build/bin/rpc-server
+  coordinator: /opt/llama.cpp/build/bin/llama-server
+  rpc_server: /opt/llama.cpp/build/bin/rpc-server
 
 ram_reclaim: auto

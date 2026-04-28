@@ -21,7 +21,7 @@
 
 | Role | Machine | Hardware | VRAM/RAM | IP |
 |------|---------|----------|----------|----|
-| Coordinator | Akiva | 2x RX 7900 XTX (ROCm) | 48GB GPU + 16.4GB CPU offload | 192.168.86.29 |
+| Coordinator | ROCm-host | 2x RX 7900 XTX (ROCm) | 48GB GPU + 16.4GB CPU offload | 192.168.86.29 |
 | Drafter | Desktop | RTX 4070 Ti Super + RTX 3060 | 28GB combined | 192.168.86.36 |
 | Proxy | M4 Mac mini | — | — | localhost |
 
@@ -88,17 +88,17 @@ MoE's low active parameter count means the target is fast enough that speculatio
 ## Issues Encountered During Test
 
 ### 1. MoE Expert Replication Breaks RPC (CRITICAL)
-- **Original plan:** Pool desktop (28GB) + akiva (48GB) = 76GB via RPC
+- **Original plan:** Pool desktop (28GB) + rocm-host (48GB) = 76GB via RPC
 - **What happened:** `alloc_tensor_range: failed to allocate RPC0[...] buffer of size 22304105600` (22.3 GB requested for 12GB 3060)
 - **Root cause:** MoE models replicate routing/expert selection tables to every device. Each RPC worker needs ~20GB just for routing tables, regardless of tensor split percentage.
 - **Workaround:** Dropped RPC entirely, used CPU offload instead
 - **Lesson:** MoE models cannot be distributed via RPC to small GPUs. The per-device overhead is too large.
 
 ### 2. Version Mismatch Across 3 Machines
-- Akiva: b8112 (dev build from git main)
+- ROCm-host: b8112 (dev build from git main)
 - Desktop: b8100 (release)
 - M2: b8079 (release)
-- **Resolution:** Rebuilt akiva to b8111, downloaded b8111 release for M2 and desktop. All matched.
+- **Resolution:** Rebuilt rocm-host to b8111, downloaded b8111 release for M2 and desktop. All matched.
 - **Lesson:** Need automated version checking. There's no `tightwad doctor` check for this currently.
 
 ### 3. M2 Drafter OOM (Metal)
@@ -141,7 +141,7 @@ MoE's low active parameter count means the target is fast enough that speculatio
 4. **MoE-aware tensor split** — warn users when MoE models are assigned to small-VRAM RPC workers
 
 ### For This Hardware Setup
-1. **Keep GPT-OSS 120B on akiva in direct mode** (no speculation) — 19.1 tok/s is excellent
+1. **Keep GPT-OSS 120B on rocm-host in direct mode** (no speculation) — 19.1 tok/s is excellent
 2. **Use desktop as a standalone inference server** for smaller models (GLM-4.7-Flash at 83 tok/s)
 3. **Reserve speculation for dense models on slow targets** (e.g., Llama 3.3 70B on RPC pool at 3 tok/s → 5.4 tok/s with speculation)
 
