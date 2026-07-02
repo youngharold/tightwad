@@ -34,8 +34,9 @@ from tightwad.peer import (
 
 @pytest.fixture
 def peer_config():
+    # Loopback: the only host on which create_app permits a token-less agent.
     return PeerConfig(
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=9191,
         auth_token=None,
         model_dirs=[],
@@ -152,7 +153,7 @@ class TestModelsEndpoint:
         model_file = tmp_path / "test-model.gguf"
         model_file.write_bytes(b"\x00" * 1024)
 
-        config = PeerConfig(model_dirs=[str(tmp_path)])
+        config = PeerConfig(host="127.0.0.1", model_dirs=[str(tmp_path)])
         app = create_app(config)
         client = TestClient(app)
 
@@ -170,7 +171,7 @@ class TestModelsEndpoint:
         assert data["models"] == []
 
     def test_nonexistent_model_dir(self):
-        config = PeerConfig(model_dirs=["/nonexistent/path"])
+        config = PeerConfig(host="127.0.0.1", model_dirs=["/nonexistent/path"])
         app = create_app(config)
         client = TestClient(app)
         resp = client.get("/v1/peer/models")
@@ -199,13 +200,49 @@ class TestRPCEndpoints:
         assert resp.status_code == 404
 
     def test_rpc_start_missing_binary(self, client):
+        # An allowlisted binary that isn't installed -> "not found on PATH".
         with patch("tightwad.peer.shutil.which", return_value=None):
             resp = client.post(
                 "/v1/peer/rpc/start",
-                json={"port": 50052, "binary": "nonexistent-rpc-server"},
+                json={"port": 50052, "binary": "rpc-server"},
             )
         assert resp.status_code == 400
         assert "not found" in resp.json()["error"]
+
+    def test_rpc_start_rejects_non_allowlisted_binary(self, client):
+        """A caller cannot spawn an arbitrary executable (CWE-78/CWE-284)."""
+        for evil in ["/bin/sh", "curl", "rpc-server; rm -rf /", "../rpc-server",
+                     "/usr/bin/rpc-server"]:
+            resp = client.post(
+                "/v1/peer/rpc/start",
+                json={"port": 50052, "binary": evil},
+            )
+            assert resp.status_code == 400, f"{evil!r} should be rejected"
+            assert "not allowed" in resp.json()["error"]
+
+    def test_rpc_start_ignores_caller_supplied_host(self, client):
+        """The bind host is fixed; the caller cannot inject it into argv."""
+        captured = {}
+
+        class _Managed:
+            pid, port, cmd = 4242, 50052, None
+
+        def fake_start(cmd, port):
+            captured["cmd"] = cmd
+            m = _Managed()
+            m.cmd = cmd
+            return m
+
+        with patch("tightwad.peer.shutil.which", return_value="/opt/rpc-server"), \
+             patch("tightwad.peer._process_manager.start", side_effect=fake_start):
+            resp = client.post(
+                "/v1/peer/rpc/start",
+                json={"port": 50052, "binary": "rpc-server",
+                      "host": "10.0.0.5 --evil-flag"},
+            )
+        assert resp.status_code == 200
+        assert "10.0.0.5 --evil-flag" not in captured["cmd"]
+        assert captured["cmd"] == ["/opt/rpc-server", "-H", "0.0.0.0", "-p", "50052"]
 
 
 # ---------------------------------------------------------------------------
@@ -215,10 +252,31 @@ class TestRPCEndpoints:
 
 class TestLogsEndpoint:
     def test_missing_log_file(self, client):
-        resp = client.get("/v1/peer/logs?service=nonexistent")
+        # "coordinator" is allowlisted but the file need not exist.
+        resp = client.get("/v1/peer/logs?service=coordinator")
         assert resp.status_code == 200
         data = resp.json()
         assert "error" in data
+
+    def test_rejects_unknown_service(self, client):
+        resp = client.get("/v1/peer/logs?service=nonexistent")
+        assert resp.status_code == 400
+        assert "unknown service" in resp.json()["error"]
+
+    def test_rejects_path_traversal(self, client, tmp_path):
+        """service must not escape the log dir (CWE-22)."""
+        secret = tmp_path / "secret.log"
+        secret.write_text("TOP SECRET\n")
+        # Absolute-override and dot-dot traversal, with and without trailing use.
+        for evil in [
+            f"/{secret.with_suffix('')}",           # absolute override
+            "../../../../etc/hostname",              # dot-dot traversal
+            "..%2f..%2fetc%2fpasswd",                # encoded (stays a single segment)
+            "peer/../proxy",                          # separator
+        ]:
+            resp = client.get("/v1/peer/logs", params={"service": evil})
+            assert resp.status_code == 400, f"{evil!r} should be rejected"
+            assert "unknown service" in resp.json()["error"]
 
     def test_reads_existing_log(self, client, tmp_path):
         log_dir = tmp_path / "logs"
@@ -278,6 +336,33 @@ class TestAuthToken:
             if method == "GET":
                 resp = secured_client.get(path)
             assert resp.status_code == 401, f"{method} {path} should be 401 without token"
+
+
+class TestUnauthenticatedBindSafeguard:
+    """The peer agent spawns/kills processes; refuse to expose it on the LAN
+    without a token (mirrors proxy.create_app; CWE-306)."""
+
+    def _config(self, host="0.0.0.0", token=None):
+        return PeerConfig(host=host, port=9191, auth_token=token, model_dirs=[])
+
+    def test_refuses_0_0_0_0_without_token(self):
+        with pytest.raises(ValueError, match="non-loopback"):
+            create_app(self._config(host="0.0.0.0", token=None))
+
+    def test_refuses_lan_ip_without_token(self):
+        with pytest.raises(ValueError, match="non-loopback"):
+            create_app(self._config(host="192.168.1.10", token=None))
+
+    def test_allows_loopback_without_token(self):
+        create_app(self._config(host="127.0.0.1", token=None))
+        create_app(self._config(host="localhost", token=None))
+
+    def test_allows_lan_with_token(self):
+        create_app(self._config(host="0.0.0.0", token="secret"))
+
+    def test_env_opt_out_allows_lan_without_token(self, monkeypatch):
+        monkeypatch.setenv("TIGHTWAD_ALLOW_UNAUTHENTICATED", "true")
+        create_app(self._config(host="0.0.0.0", token=None))
 
 
 # ---------------------------------------------------------------------------

@@ -26,6 +26,24 @@ logger = logging.getLogger("tightwad.peer")
 
 PIDFILE = Path.home() / ".tightwad" / "peer.pid"
 
+_LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "0:0:0:0:0:0:0:1"}
+
+
+def _is_loopback(host: str) -> bool:
+    return host.lower() in _LOOPBACK_HOSTS
+
+
+#: Basenames the peer agent is willing to spawn via /v1/peer/rpc/start.
+#: The endpoint is a remote-triggered process launcher, so an unrestricted
+#: ``binary`` field is arbitrary-process-execution. Only llama.cpp's
+#: rpc-server (the sole thing this endpoint exists to launch) is permitted.
+_RPC_BINARY_ALLOWLIST = {"rpc-server", "rpc-server.exe"}
+
+#: Log files the peer agent will serve via /v1/peer/logs. Anything outside
+#: this set (or containing path separators / traversal) is rejected — the
+#: value is otherwise interpolated straight into a filesystem path.
+_SERVED_LOG_SERVICES = {"peer", "proxy", "coordinator"}
+
 # ---------------------------------------------------------------------------
 # Startup timestamp (set when create_app is called)
 # ---------------------------------------------------------------------------
@@ -366,17 +384,25 @@ async def rpc_start_endpoint(request: Request) -> JSONResponse:
     if not port or not isinstance(port, int):
         return JSONResponse({"error": "port (int) is required"}, status_code=400)
 
+    # The endpoint launches a process on behalf of a (possibly
+    # unauthenticated) network caller, so the binary must be an allowlisted
+    # basename — never an arbitrary caller-supplied path — and the caller
+    # cannot inject the bind host into argv.
     binary = body.get("binary", "rpc-server")
-    resolved = shutil.which(binary) or binary
-
-    if not Path(resolved).exists() and not shutil.which(resolved):
+    if Path(binary).name != binary or binary not in _RPC_BINARY_ALLOWLIST:
         return JSONResponse(
-            {"error": f"binary not found: {binary}"},
+            {"error": f"binary not allowed: {binary!r} "
+                      f"(permitted: {sorted(_RPC_BINARY_ALLOWLIST)})"},
+            status_code=400,
+        )
+    resolved = shutil.which(binary)
+    if not resolved:
+        return JSONResponse(
+            {"error": f"binary not found on PATH: {binary}"},
             status_code=400,
         )
 
-    host = body.get("host", "0.0.0.0")
-    cmd = [resolved, "-H", host, "-p", str(port)]
+    cmd = [resolved, "-H", "0.0.0.0", "-p", str(port)]
 
     try:
         managed = _process_manager.start(cmd, port)
@@ -459,8 +485,19 @@ async def moe_profile_endpoint(request: Request) -> JSONResponse:
 async def logs_endpoint(request: Request) -> JSONResponse:
     """GET /v1/peer/logs -- return recent log lines."""
     service = request.query_params.get("service", "peer")
-    lines = int(request.query_params.get("lines", "50"))
-    lines = min(lines, 1000)  # cap at 1000
+    # `service` is interpolated into a filesystem path; restrict it to a known
+    # set so it cannot traverse (../) or absolute-override out of the log dir.
+    if service not in _SERVED_LOG_SERVICES:
+        return JSONResponse(
+            {"error": f"unknown service: {service!r} "
+                      f"(permitted: {sorted(_SERVED_LOG_SERVICES)})"},
+            status_code=400,
+        )
+    try:
+        lines = int(request.query_params.get("lines", "50"))
+    except ValueError:
+        return JSONResponse({"error": "lines must be an integer"}, status_code=400)
+    lines = max(0, min(lines, 1000))  # cap at 1000
 
     log_dir = Path.home() / ".tightwad" / "logs"
     log_file = log_dir / f"{service}.log"
@@ -491,9 +528,32 @@ async def logs_endpoint(request: Request) -> JSONResponse:
 
 
 def create_app(config: PeerConfig) -> Starlette:
-    """Create the Starlette ASGI application for the peer agent."""
+    """Create the Starlette ASGI application for the peer agent.
+
+    .. note::
+        Refuses to construct an unauthenticated peer agent bound to a
+        non-loopback host. The agent exposes process spawn/kill control and
+        log reads; LAN exposure without a token is a foot-gun. Set
+        ``peer.auth_token`` (or ``TIGHTWAD_PEER_TOKEN``) to allow LAN
+        binding, OR set ``TIGHTWAD_ALLOW_UNAUTHENTICATED=true`` to
+        acknowledge the risk. Mirrors :func:`tightwad.proxy.create_app`.
+    """
     global _start_time
     _start_time = time.time()
+
+    if (
+        not config.auth_token
+        and not _is_loopback(config.host)
+        and os.environ.get("TIGHTWAD_ALLOW_UNAUTHENTICATED", "").lower() != "true"
+    ):
+        raise ValueError(
+            f"Refusing to start: host={config.host!r} is non-loopback and no "
+            f"auth_token is configured. The peer agent can spawn/kill "
+            f"processes and read logs. Either set TIGHTWAD_PEER_TOKEN, add "
+            f"peer.auth_token to cluster.yaml, bind to 127.0.0.1, OR set "
+            f"TIGHTWAD_ALLOW_UNAUTHENTICATED=true to acknowledge that the "
+            f"agent will be open to anyone on the network."
+        )
 
     middleware = []
     if config.auth_token:
@@ -503,7 +563,7 @@ def create_app(config: PeerConfig) -> Starlette:
         )
     else:
         logger.warning(
-            "Peer agent starting WITHOUT authentication. "
+            "Peer agent starting WITHOUT authentication (loopback bind). "
             "Set peer.auth_token in config or TIGHTWAD_PEER_TOKEN env var."
         )
 

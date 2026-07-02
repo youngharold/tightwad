@@ -88,7 +88,11 @@ def peer_start(ctx, port):
             "uvicorn.access": {"handlers": ["console", "file"], "level": "INFO"},
         },
     }
-    app = peer_mod.create_app(peer_config)
+    try:
+        app = peer_mod.create_app(peer_config)
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
     peer_mod.write_pidfile()
     try:
         uvicorn.run(

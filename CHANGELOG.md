@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- **Peer agent now requires authentication for LAN binds.** `peer start` bound to `0.0.0.0` (the default) with no `auth_token` previously exposed unauthenticated process spawn/kill control and log reads to the whole network — it only logged a warning. `create_app` now refuses a non-loopback bind without a token (matching the proxy), overridable with `TIGHTWAD_ALLOW_UNAUTHENTICATED=true`. (CWE-306)
+- **`/v1/peer/rpc/start` no longer launches arbitrary executables.** The `binary` field accepted any path (`/bin/sh`, absolute paths, etc.); it is now restricted to an allowlist (`rpc-server`) resolved on PATH, and the caller-supplied `host` can no longer be injected into the child's argv (bind host is fixed). (CWE-78 / CWE-88)
+- **`/v1/peer/logs` path traversal fixed.** The `service` query param was interpolated straight into a filesystem path, allowing reads of any `*.log` on the host via `../` or absolute override; it is now validated against an allowlist of known services. (CWE-22)
+
 ### Fixed (second review round — all adversarially verified)
 - **Consensus voting no longer treats Ollama blob drafts as unanimous.** `verify_consensus` compared only `token_id`; every Ollama drafter (and any llama.cpp response without per-token ids) returns a single token with id 0, so completely different drafter outputs counted as unanimous agreement and the full completion was served **without ever contacting the target model** while stats reported 100% acceptance. Voting now keys on `(token_id, text)`, forcing target verification on real disagreement.
 - **`/v1/chat/completions` with `stream=true` now emits proper `chat.completion.chunk` SSE objects** (role delta first, content deltas, finish chunk, `[DONE]`). It previously returned raw completions-style events (`text_completion` / `choices[0].text`), which the OpenAI SDK, LiteLLM, and tightwad's own `bench.py` chat-stream reader could not consume.

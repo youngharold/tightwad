@@ -181,7 +181,7 @@ tightwad doctor --fix
 - **Family auto-detection** — Tightwad detects model architecture families at startup and warns on mismatch. No more silent 3% acceptance from cross-family pairs.
 - **`max_draft_tokens: auto`** — cost-aware adaptive tuning. Adjusts based on acceptance rate AND draft-vs-verify timing. Recommend for all setups.
 - **Chat template auto-detection** — `/v1/chat/completions` auto-detects Llama 3, Mistral, Gemma, Phi, DeepSeek, Command-R formats. Override with `proxy.chat_template: llama3` if needed.
-- **Peer agent** — `tightwad peer start` on Windows/remote machines replaces SSH. Set `peer_port: 9191` on workers.
+- **Peer agent** — `tightwad peer start` on Windows/remote machines replaces SSH. Set `peer_port: 9191` on workers. **Auth required for LAN use:** the agent exposes process spawn/kill control, so on a non-loopback bind it refuses to start unless `peer.auth_token` (or `TIGHTWAD_PEER_TOKEN`) is set — bind `127.0.0.1` for token-free local use, or set `TIGHTWAD_ALLOW_UNAUTHENTICATED=true` to opt out.
 - **Quality gate** — `tightwad gate start` for CPU fleet + GPU verifier mode (datacenter cost reduction).
 - **Consensus** — `proxy.consensus_mode: majority` with multiple drafters skips the target when drafters agree.
 - **A/B benchmark** — `tightwad bench` compares proxy vs direct target speed.
