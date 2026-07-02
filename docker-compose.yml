@@ -16,7 +16,7 @@ services:
       TIGHTWAD_TARGET_MODEL: "qwen3:32b"
       TIGHTWAD_TARGET_BACKEND: "ollama"
       TIGHTWAD_PORT: "8088"
-      TIGHTWAD_MAX_DRAFT_TOKENS: "32"
+      TIGHTWAD_MAX_DRAFT_TOKENS: "8"
       # REQUIRED when binding to a non-loopback host (host network mode or
       # external port mapping). Generate with:
       #   python3 -c "import secrets; print(secrets.token_urlsafe(32))"
@@ -26,7 +26,10 @@ services:
     volumes:
       - ./logs:/root/.tightwad/logs    # persist proxy logs across restarts
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://127.0.0.1:8088/v1/models', timeout=5).raise_for_status()"]
+      # /v1/models is auth-protected when TIGHTWAD_PROXY_TOKEN is set, so the
+      # probe must send the Bearer token — otherwise it 401s and the
+      # container is perpetually unhealthy.
+      test: ["CMD", "python", "-c", "import os,httpx; t=os.environ.get('TIGHTWAD_PROXY_TOKEN'); h={'Authorization': f'Bearer {t}'} if t else {}; httpx.get('http://127.0.0.1:8088/v1/models', headers=h, timeout=5).raise_for_status()"]
       interval: 10s
       timeout: 5s
       retries: 5

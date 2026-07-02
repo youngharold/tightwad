@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (packaging & examples)
+- **Proxy-only config files now load.** A YAML with a `proxy` section but no `coordinator` (speculation between two already-running servers — the `minimal-spec-decode` example) raised "Missing required 'coordinator' section". `load_config` now accepts a coordinator-less file when a `proxy` section is present (previously proxy-only mode worked only via env vars, never a file).
+- **All five shipped `examples/*.yaml` now load.** They used a schema the parser rejects — `models.default:` as a string crashed on load, and singular `gpu:` worker blocks silently contributed zero GPUs. Rewritten to the real schema (worker `gpus:` list with `rpc_port`, per-model `default: true`, top-level `binaries:`); a parametrized test now loads every example so they can't drift again.
+- **Docker healthcheck no longer fails when a proxy token is set.** `docker-compose.yml` requires `TIGHTWAD_PROXY_TOKEN`, but the healthcheck probed `/v1/models` with no `Authorization` header, so it always got 401 and the container stayed unhealthy. The probe now sends the Bearer token. Also corrected the example `TIGHTWAD_MAX_DRAFT_TOKENS` to the real default (`8`).
+
 ### Fixed (module correctness — third review round)
 - **Fused-MoE models no longer report the entire model as routing overhead.** `gguf_inspect._detect_moe` only recognized indexed expert tensors (`blk.L.ffn_gate.N.weight`); for the fused form llama.cpp actually ships (`blk.L.ffn_gate_exps.weight` — Mixtral, Qwen-MoE, DeepSeek, GPT-OSS) it found zero experts, so `routing_overhead_bytes` ballooned to the whole model size and the MoE VRAM warnings were meaningless. It now matches fused expert tensors too.
 - **Q2_K GGUF tensor sizes were undercounted ~36%.** The quant table listed `block_q2_K` as 54 bytes; the real ggml block is 84. Fixed, along with wrong block/byte sizes for the IQ-quant family (IQ2_XXS/XS, IQ1_S/M, IQ3_XXS/S, IQ2_S, IQ4_NL/XS) that produced garbage sizes for those models. Affects `model_summary()['total_size']` and the public `tensor_data_range()`.

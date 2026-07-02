@@ -402,3 +402,56 @@ def test_config_autodiscovery_raises_with_searched_paths(tmp_path, monkeypatch):
     monkeypatch.setattr("tightwad.config.DEFAULT_CONFIG", tmp_path / "nonexistent" / "cluster.yaml")
     with pytest.raises(FileNotFoundError, match="tightwad init"):
         load_config(None)
+
+
+# ---------------------------------------------------------------------------
+# Shipped examples must load (regression: they had drifted from the parser)
+# ---------------------------------------------------------------------------
+
+EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
+
+
+@pytest.mark.parametrize(
+    "example",
+    sorted(p.name for p in EXAMPLES_DIR.glob("*.yaml")),
+)
+def test_shipped_example_loads(example):
+    """Every examples/*.yaml must parse — users copy these verbatim."""
+    config = load_config(EXAMPLES_DIR / example)
+    assert isinstance(config, ClusterConfig)
+    # Coordinator+worker examples must actually contribute their GPUs
+    # (the old `gpu:` singular schema silently yielded zero).
+    if config.workers:
+        assert config.rpc_addresses, f"{example} declares workers but no RPC GPUs"
+    # A declared model set must expose exactly one default.
+    if config.models:
+        assert config.default_model() is not None, f"{example} has no default model"
+
+
+def test_proxy_only_config_without_coordinator(tmp_path):
+    """A proxy-only YAML (no coordinator section) is valid for speculation."""
+    cfg = tmp_path / "proxy-only.yaml"
+    cfg.write_text(textwrap.dedent("""
+        proxy:
+          host: 127.0.0.1
+          port: 8088
+          draft:
+            url: http://192.168.1.10:11434
+            model_name: qwen3:1.7b
+            backend: ollama
+          target:
+            url: http://192.168.1.20:11434
+            model_name: qwen3:32b
+            backend: ollama
+    """))
+    config = load_config(cfg)
+    assert config.coordinator_gpus == []
+    assert config.proxy is not None
+    assert config.proxy.target.model_name == "qwen3:32b"
+
+
+def test_config_without_coordinator_or_proxy_raises(tmp_path):
+    cfg = tmp_path / "empty.yaml"
+    cfg.write_text("models:\n  m:\n    path: /x.gguf\n    default: true\n")
+    with pytest.raises(ValueError, match="coordinator.*proxy|proxy.*coordinator"):
+        load_config(cfg)

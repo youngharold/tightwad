@@ -8,22 +8,20 @@
 coordinator:
   host: 192.168.1.10
   port: 8080
-  binary: /usr/local/bin/llama-server
+  backend: cuda
 
 workers:
-  - name: gpu-main
-    host: 192.168.1.10
-    port: 50052
-    gpu:
-      vendor: nvidia
-      model: RTX 4070 Ti Super
-      vram_gb: 16
+  - host: 192.168.1.10
+    gpus:
+      - name: RTX 4070 Ti Super
+        vram_gb: 16
+        rpc_port: 50052
 
 models:
-  default: qwen3-32b
   qwen3-32b:
     name: Qwen3 32B
     path: /models/qwen3-32b-Q4_K_M.gguf
+    default: true
 
 # Speculative decoding proxy
 proxy:
@@ -44,4 +42,8 @@ proxy:
     backend: llamacpp
 
   # How many tokens the draft model proposes per round
-  max_draft_tokens: 32
+  max_draft_tokens: 8
+
+binaries:
+  coordinator: /usr/local/bin/llama-server
+  rpc_server: /usr/local/bin/rpc-server

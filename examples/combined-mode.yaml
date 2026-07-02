@@ -9,47 +9,34 @@
 coordinator:
   host: 192.168.1.10
   port: 8080
-  binary: /usr/local/bin/llama-server
+  backend: cuda
 
 workers:
-  - name: desktop-gpu1
-    host: 192.168.1.10
-    port: 50052
-    gpu:
-      vendor: nvidia
-      model: RTX 4070 Ti Super
-      vram_gb: 16
-
-  - name: desktop-gpu2
-    host: 192.168.1.10
-    port: 50053
-    gpu:
-      vendor: nvidia
-      model: RTX 3060
-      vram_gb: 12
-
-  - name: laptop
-    host: 192.168.1.20
-    port: 50052
-    gpu:
-      vendor: nvidia
-      model: RTX 2070
-      vram_gb: 8
-
-  - name: amd-box
-    host: 192.168.1.30
-    port: 50052
-    gpu:
-      vendor: amd
-      model: RX 7900 XTX
-      vram_gb: 24
+  - host: 192.168.1.10       # desktop, two local GPUs via rpc-server
+    gpus:
+      - name: RTX 4070 Ti Super
+        vram_gb: 16
+        rpc_port: 50052
+      - name: RTX 3060
+        vram_gb: 12
+        rpc_port: 50053
+  - host: 192.168.1.20       # laptop
+    gpus:
+      - name: RTX 2070
+        vram_gb: 8
+        rpc_port: 50052
+  - host: 192.168.1.30       # AMD box (ROCm + llama.cpp HIP backend)
+    gpus:
+      - name: RX 7900 XTX
+        vram_gb: 24
+        rpc_port: 50052
 
 models:
-  default: llama-70b
   llama-70b:
     name: Llama 3.3 70B
     path: /models/llama-3.3-70b-instruct-Q4_K_M.gguf
-    tensor_split: "16,12,8,24"
+    default: true
+    # Tensor split is computed automatically from vram_gb (16:12:8:24).
 
 # Speculative decoding on top of the pool
 proxy:
@@ -68,4 +55,8 @@ proxy:
     model_name: llama-70b
     backend: llamacpp
 
-  max_draft_tokens: 32
+  max_draft_tokens: 8
+
+binaries:
+  coordinator: /usr/local/bin/llama-server
+  rpc_server: /usr/local/bin/rpc-server

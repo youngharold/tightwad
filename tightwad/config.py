@@ -433,10 +433,16 @@ def load_config(path: str | Path | None = None) -> ClusterConfig:
     with open(config_path) as f:
         raw = yaml.safe_load(f)
 
+    # A proxy-only config (speculation between two already-running servers,
+    # no RPC pool) legitimately omits the coordinator section. Only require
+    # it when there is no proxy section either.
     if "coordinator" not in raw:
-        raise ValueError(
-            "Missing required 'coordinator' section in cluster.yaml"
-        )
+        if "proxy" not in raw:
+            raise ValueError(
+                "Config must have a 'coordinator' section (RPC pool) or a "
+                "'proxy' section (speculation), and has neither."
+            )
+        raw = {**raw, "coordinator": {}}
 
     coord = raw["coordinator"]
     coordinator_gpus = [
