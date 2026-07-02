@@ -50,9 +50,11 @@ Default behavior is unchanged if `moe_placement` is omitted.
    pins the top-K to the highest-scoring device.
 5. One `--override-tensor` flag is emitted per `(layer, device)` pair.
 
-Device scoring uses real TCP-RTT measurements from `tightwad moe device-bench`
-(cached 24h at `~/.tightwad/device-scores.json`). Coordinator-local GPUs get a
-baseline score; RPC workers scale inversely with measured latency.
+Device scoring uses real TCP-RTT measurements taken automatically during
+`tightwad moe plan --strategy profile-guided` (cached 24h at
+`~/.tightwad/device-scores.json`). Coordinator-local GPUs get a baseline score;
+RPC workers scale inversely with measured latency, and always rank below the
+local baseline.
 
 ## Profile-guided in practice
 

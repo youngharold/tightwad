@@ -186,7 +186,8 @@ def _detect_moe(
     """Detect MoE metadata from GGUF KV pairs and tensor names.
 
     Checks ``{arch}.expert_count`` (standard GGUF key) and falls back to
-    scanning tensor names for ``ffn_.*expert`` patterns.
+    scanning tensor names for fused (``ffn_*_exps.weight``), indexed
+    (``ffn_*.N.weight``), or ``expert``-named tensors.
     """
     # Primary: GGUF metadata key
     n_expert = meta.get(f"{arch}.expert_count")
@@ -196,14 +197,20 @@ def _detect_moe(
     if n_expert is not None:
         n_expert = int(n_expert)
 
-    # Identify expert tensors: either "expert" in name or indexed FFN pattern
-    # Common patterns:
-    #   "blk.0.ffn_gate_exps.weight" (has "expert")
-    #   "blk.0.ffn_gate.0.weight" (indexed by expert number)
+    # Identify expert tensors. Three shapes cover the ecosystem:
+    #   "blk.0.ffn_gate_exps.weight" — fused (Mixtral/Qwen-MoE/DeepSeek/GPT-OSS);
+    #       all experts packed in one tensor, matched by FUSED_RE (NOT "expert")
+    #   "blk.0.ffn_gate.0.weight"    — indexed by expert number
+    #   any name literally containing "expert"
     import re
+    from .moe_placement import FUSED_RE
     expert_tensors: list[str] = []
     expert_indices: set[int] = set()
     for t in tensors:
+        # Fused expert tensors: blk.N.ffn_{gate,up,down}_exps.weight
+        if FUSED_RE.match(t.name):
+            expert_tensors.append(t.name)
+            continue
         if "expert" in t.name.lower():
             expert_tensors.append(t.name)
             continue

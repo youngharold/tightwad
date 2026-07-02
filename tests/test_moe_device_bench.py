@@ -59,6 +59,21 @@ def test_reachable_worker_scores_finite(tmp_path, monkeypatch):
     assert scores["RPC[10.0.0.1:50052]"] == LOCAL_BASELINE_SCORE / 5.0
 
 
+def test_sub_ms_rtt_stays_below_local_baseline(tmp_path, monkeypatch):
+    # Sub-millisecond RTT (loopback / fast LAN) must never let a remote RPC
+    # worker outrank a local coordinator GPU — local VRAM is always faster.
+    import tightwad.moe_device_bench as dm
+    monkeypatch.setattr(dm, "_measure_tcp_rtt",
+                        lambda host, port, iterations=5, timeout=2.0: 0.02)
+
+    config = _config(coord_gpus=[16], workers=[("127.0.0.1", 50052, 8)])
+    scores = measure_device_scores(
+        config, force=True, cache_path=tmp_path / "scores.json",
+    )
+    assert scores["CUDA0"] == LOCAL_BASELINE_SCORE
+    assert scores["RPC[127.0.0.1:50052]"] < LOCAL_BASELINE_SCORE
+
+
 def test_cache_hit_skips_measurement(tmp_path, monkeypatch):
     import tightwad.moe_device_bench as dm
 

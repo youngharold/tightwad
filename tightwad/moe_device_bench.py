@@ -63,8 +63,11 @@ def measure_device_scores(
                 scores[ot] = DeviceScore(ot_device=ot, score=0.0,
                                            rtt_ms=float("inf"), source="tcp")
             else:
-                scores[ot] = DeviceScore(ot_device=ot,
-                                           score=LOCAL_BASELINE_SCORE / max(rtt, 0.1),
+                # Clamp strictly below the local baseline: sub-ms RTT (loopback
+                # or LAN) would otherwise beat local VRAM and misplace hot experts.
+                score = min(LOCAL_BASELINE_SCORE * 0.99,
+                            LOCAL_BASELINE_SCORE / max(rtt, 0.1))
+                scores[ot] = DeviceScore(ot_device=ot, score=score,
                                            rtt_ms=rtt, source="tcp")
 
     result = {d.ot_device: d.score for d in scores.values()}

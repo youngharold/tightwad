@@ -1,9 +1,15 @@
 """Model family detection and compatibility validation.
 
 Detects the architecture family of draft and target models to warn users
-when they pair incompatible models for speculative decoding.  Mismatched
-families cause catastrophically low acceptance rates (e.g. 1.6% instead
-of 70%+) with no obvious error — just 10x slower inference.
+when they pair models from different architectures for speculative
+decoding.  Cross-architecture pairs cause catastrophically low acceptance
+rates with no obvious error — just far slower inference.
+
+This check is architecture-level only (``general.architecture`` and the
+family map below).  It flags e.g. a Qwen draft against a Llama target, but
+it does NOT distinguish same-architecture version mismatches (e.g. Llama
+3.2 vs Llama 3.3, which both report ``llama`` yet can score ~1.6%
+acceptance).  Vocab/version-aware detection to catch those is future work.
 
 Detection sources (tried in order):
 1. Ollama ``/api/show`` — returns ``model_info`` with architecture keys

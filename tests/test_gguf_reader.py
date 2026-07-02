@@ -259,12 +259,40 @@ class TestComputeTensorBytes:
         # 4096 elements = 16 blocks * 144 = 2304
         assert _compute_tensor_bytes([4096], 12) == 2304
 
+    def test_q2_k(self):
+        # Q2_K: block_q2_K is 84 bytes (scales[16] + qs[64] + d + dmin) per 256
+        # 512 elements = 2 blocks * 84 = 168
+        assert _compute_tensor_bytes([512], 10) == 168
+
     def test_unknown_type_returns_minus_one(self):
         assert _compute_tensor_bytes([100], 999) == -1
 
     def test_multidimensional(self):
         # F16, 2D: 32 * 64 = 2048 elements * 2 bytes = 4096
         assert _compute_tensor_bytes([32, 64], 1) == 4096
+
+
+class TestQuantBlockSizes:
+    def test_q2_k_block_size(self):
+        # block_q2_K = 84 bytes / 256 elements (ggml-common.h)
+        assert GGUF_TYPES[10] == (84, 256)
+
+    def test_iq_superblock_sizes(self):
+        # (type_size, block_size) from ggml-common.h; IQ*_K types are 256-element
+        # QK_K superblocks, IQ4_NL is a 32-element block.
+        assert GGUF_TYPES[16] == (66, 256)    # IQ2_XXS
+        assert GGUF_TYPES[17] == (74, 256)    # IQ2_XS
+        assert GGUF_TYPES[18] == (98, 256)    # IQ3_XXS
+        assert GGUF_TYPES[19] == (50, 256)    # IQ1_S
+        assert GGUF_TYPES[20] == (18, 32)     # IQ4_NL
+        assert GGUF_TYPES[21] == (110, 256)   # IQ3_S
+        assert GGUF_TYPES[22] == (82, 256)    # IQ2_S
+        assert GGUF_TYPES[23] == (136, 256)   # IQ4_XS
+        assert GGUF_TYPES[29] == (56, 256)    # IQ1_M
+
+    def test_iq2_xxs_tensor_bytes(self):
+        # IQ2_XXS: 66 bytes per 256-element block; 512 elements = 2 blocks = 132
+        assert _compute_tensor_bytes([512], 16) == 132
 
 
 class TestAlignment:

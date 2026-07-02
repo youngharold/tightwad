@@ -9,6 +9,7 @@ from tightwad.gguf_inspect import (
     DistributionPlan,
     plan_distribution,
     format_report,
+    _detect_moe,
     _file_type_to_quant,
     _guess_quant,
     _human_params,
@@ -172,6 +173,55 @@ class TestFormatReport:
         assert "Distribution Plan" in report
         assert "P400" in report
         assert "4070" in report
+
+
+class TestDetectMoE:
+    def test_fused_expert_tensors_detected(self):
+        # llama.cpp fused MoE naming: blk.L.ffn_{gate,up,down}_exps.weight
+        # The substring is "exps", not "expert", and there is no ".<digit>."
+        # index — so the old detector missed these entirely.
+        tensors = [
+            TensorInfo(name="token_embd.weight", shape=[4096, 32000], dtype="Q4_K", n_bytes=50_000_000),
+            TensorInfo(name="blk.0.attn_q.weight", shape=[4096, 4096], dtype="Q4_K", n_bytes=5_000_000),
+        ]
+        for layer in range(2):
+            for kind in ("gate", "up", "down"):
+                tensors.append(TensorInfo(
+                    name=f"blk.{layer}.ffn_{kind}_exps.weight",
+                    shape=[4096, 4096, 8],
+                    dtype="Q4_K",
+                    n_bytes=200_000_000,
+                ))
+        meta = {"llama.expert_count": 8, "llama.expert_used_count": 2}
+        moe = _detect_moe(meta, "llama", tensors)
+        assert moe is not None
+        assert moe.n_expert == 8
+        assert moe.n_expert_used == 2
+        # All 6 fused exps tensors are recognised as expert tensors
+        assert len(moe.expert_tensor_names) == 6
+        # Routing overhead must be ONLY the shared (non-expert) tensors, not the
+        # entire model — the bug ballooned this to the full model size.
+        assert moe.routing_overhead_bytes == 50_000_000 + 5_000_000
+
+    def test_indexed_expert_tensors_still_detected(self):
+        tensors = [
+            TensorInfo(name="blk.0.attn_q.weight", shape=[4096, 4096], dtype="Q4_K", n_bytes=5_000_000),
+        ]
+        for e in range(4):
+            tensors.append(TensorInfo(
+                name=f"blk.0.ffn_gate.{e}.weight", shape=[4096, 4096], dtype="Q4_K", n_bytes=1_000_000,
+            ))
+        moe = _detect_moe({}, "llama", tensors)
+        assert moe is not None
+        assert moe.n_expert == 4  # inferred from max index + 1
+        assert len(moe.expert_tensor_names) == 4
+
+    def test_dense_model_is_not_moe(self):
+        tensors = [
+            TensorInfo(name="blk.0.ffn_gate.weight", shape=[4096, 4096], dtype="Q4_K", n_bytes=1_000_000),
+            TensorInfo(name="blk.0.ffn_up.weight", shape=[4096, 4096], dtype="Q4_K", n_bytes=1_000_000),
+        ]
+        assert _detect_moe({}, "llama", tensors) is None
 
 
 class TestHelpers:

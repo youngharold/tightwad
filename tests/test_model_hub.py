@@ -108,3 +108,49 @@ def test_download_model_mock(tmp_path):
     assert path.stat().st_size == 100
     assert len(progress_calls) == 1
     assert validate_download(path)
+
+
+def test_download_ignored_range_resets_total(tmp_path):
+    """Server ignores Range (returns 200, not 206) → progress total is the FULL
+    size, not existing+full, so the bar reaches 100%."""
+    dest = tmp_path / "test.gguf"
+    dest.write_bytes(b"STALE_PARTIAL")  # 13 bytes of an out-of-date partial
+
+    full_body = b"GGUF" + b"\x00" * 96  # 100 bytes = the complete file
+
+    class FakeResponse:
+        status_code = 200  # server ignored the Range header
+        headers = {"content-length": str(len(full_body))}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+        def raise_for_status(self):
+            pass
+
+        def iter_bytes(self, chunk_size=None):
+            yield full_body
+
+    progress_calls = []
+
+    def on_progress(downloaded, total):
+        progress_calls.append((downloaded, total))
+
+    with patch("tightwad.model_hub.httpx.stream", return_value=FakeResponse()):
+        path = download_model(
+            "https://example.com/model.gguf",
+            dest_dir=tmp_path,
+            filename="test.gguf",
+            resume=True,
+            progress_callback=on_progress,
+        )
+
+    # Re-downloaded from scratch — file is exactly the full body
+    assert path.stat().st_size == len(full_body)
+    # Progress reaches 100%: final downloaded == total == full size
+    downloaded, total = progress_calls[-1]
+    assert total == len(full_body)
+    assert downloaded == total

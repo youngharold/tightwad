@@ -172,14 +172,19 @@ class GemmaTemplate(ChatTemplate):
 
     def render(self, messages: list[dict]) -> str:
         parts: list[str] = []
+        system = ""
 
         for msg in messages:
             role = msg["role"]
             content = msg.get("content", "")
             if role == "system":
-                # Gemma doesn't have a native system role — prepend to first user
-                parts.append(f"<start_of_turn>user\n{content}<end_of_turn>\n")
+                # Gemma has no native system role — buffer it and fold into the
+                # first user turn (two consecutive user turns are OOD for Gemma).
+                system = content
             elif role == "user":
+                if system:
+                    content = f"{system}\n\n{content}"
+                    system = ""
                 parts.append(f"<start_of_turn>user\n{content}<end_of_turn>\n")
             elif role == "assistant":
                 parts.append(f"<start_of_turn>model\n{content}<end_of_turn>\n")

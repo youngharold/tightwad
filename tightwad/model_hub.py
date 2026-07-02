@@ -174,7 +174,12 @@ def download_model(
         if content_range and "/" in content_range:
             total_size = int(content_range.rsplit("/", 1)[1])
         elif content_length:
-            total_size = existing_size + int(content_length)
+            # Only a 206 resume appends to what's on disk; a 200 means the
+            # server ignored Range and content-length is the FULL size.
+            if response.status_code == 206:
+                total_size = existing_size + int(content_length)
+            else:
+                total_size = int(content_length)
 
         mode = "ab" if existing_size > 0 and response.status_code == 206 else "wb"
         bytes_downloaded = existing_size if mode == "ab" else 0

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (module correctness — third review round)
+- **Fused-MoE models no longer report the entire model as routing overhead.** `gguf_inspect._detect_moe` only recognized indexed expert tensors (`blk.L.ffn_gate.N.weight`); for the fused form llama.cpp actually ships (`blk.L.ffn_gate_exps.weight` — Mixtral, Qwen-MoE, DeepSeek, GPT-OSS) it found zero experts, so `routing_overhead_bytes` ballooned to the whole model size and the MoE VRAM warnings were meaningless. It now matches fused expert tensors too.
+- **Q2_K GGUF tensor sizes were undercounted ~36%.** The quant table listed `block_q2_K` as 54 bytes; the real ggml block is 84. Fixed, along with wrong block/byte sizes for the IQ-quant family (IQ2_XXS/XS, IQ1_S/M, IQ3_XXS/S, IQ2_S, IQ4_NL/XS) that produced garbage sizes for those models. Affects `model_summary()['total_size']` and the public `tensor_data_range()`.
+- **MoE device scoring never places hot experts on a remote worker over the local GPU.** RPC workers with sub-millisecond RTT (routine on a LAN) could score above the local baseline, inverting the documented "local is always faster" invariant; RPC scores are now clamped strictly below it.
+- **Model-download progress reaches 100% when the server ignores a Range request.** A partial file plus a `200` (non-resumable) response inflated the total by the already-downloaded size, so the progress bar capped below 100%; the total is now taken from the response for a full re-download.
+- **Gemma chat template no longer emits two consecutive user turns.** A system message was appended as its own `<start_of_turn>user` turn (out-of-distribution for Gemma); it is now folded into the first user turn, matching Gemma's official template.
+
+### Docs
+- **Rewrote `docs/configuration.md` to match the actual config parser.** The reference documented a worker/model/binary schema `config.py` does not parse — its "Full Example" crashed on load (`models.default:` as a string) and its worker blocks silently contributed zero GPUs (`gpu:` vs `gpus:`). Corrected to the real schema (worker `gpus:` list with `rpc_port`, top-level `binaries:`, per-model `default: true`, no `tensor_split` field), fixed the coordinator `host` default (`0.0.0.0`) and the `proxy.max_draft_tokens` default (`8`, not `32`), and documented the `peer` section and env vars.
+- **Corrected the family-detection claim (README + `family.py`).** The docs implied the checker warns on the `Llama 3.2 3B → Llama 3.3 70B` pair, but that check is architecture-level only and reports same-architecture pairs as compatible. The claim now honestly scopes the check to cross-architecture mismatches; vocab/version-aware detection is tracked as future work.
+- Removed the reference to a nonexistent `tightwad moe device-bench` command (`docs/moe.md`); device scoring runs automatically during `moe plan --strategy profile-guided`.
+
 ### Security
 - **Peer agent now requires authentication for LAN binds.** `peer start` bound to `0.0.0.0` (the default) with no `auth_token` previously exposed unauthenticated process spawn/kill control and log reads to the whole network — it only logged a warning. `create_app` now refuses a non-loopback bind without a token (matching the proxy), overridable with `TIGHTWAD_ALLOW_UNAUTHENTICATED=true`. (CWE-306)
 - **`/v1/peer/rpc/start` no longer launches arbitrary executables.** The `binary` field accepted any path (`/bin/sh`, absolute paths, etc.); it is now restricted to an allowlist (`rpc-server`) resolved on PATH, and the caller-supplied `host` can no longer be injected into the child's argv (bind host is fixed). (CWE-78 / CWE-88)

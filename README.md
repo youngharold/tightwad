@@ -745,7 +745,7 @@ CPU drafting with a 1.7B model works but doesn't achieve speedup at `max_draft_t
 
 100% acceptance rate, 33 tokens/round. The 70B model doesn't fit on any single machine — it's distributed across 4 GPUs (4070 Ti Super + 3060 + 2070 + M2 Metal = 52GB VRAM) over WiFi. Without speculation: painfully slow. With speculation: usable.
 
-> **Critical lesson: draft and target MUST be the same model family.** Llama 3.2 3B → Llama 3.3 70B got 1.6% acceptance (10x slower than no speculation) despite sharing a tokenizer. Llama 3.1 8B → Llama 3.3 70B gets 100% acceptance because they share the same architecture. Tightwad automatically detects model families at proxy startup and in `tightwad doctor`, warning loudly on mismatch.
+> **Critical lesson: draft and target MUST be from the same model line.** Llama 3.2 3B → Llama 3.3 70B got 1.6% acceptance (10x slower than no speculation) despite sharing a tokenizer and the `llama` architecture. Llama 3.1 8B → Llama 3.3 70B gets 100% acceptance. Tightwad detects the model **architecture family** (from GGUF `general.architecture` / backend metadata) at proxy startup and in `tightwad doctor`, and warns on cross-architecture pairs (e.g. a Qwen draft with a Llama target). Note this check is architecture-level only: it does **not** distinguish same-architecture version mismatches like Llama 3.2 vs 3.3, so pick a draft from the same model line as the target. (Vocab/version-aware detection to catch these is tracked as a follow-up.)
 
 ```
 Why this works:

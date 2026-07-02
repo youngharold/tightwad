@@ -133,11 +133,23 @@ class TestGemmaTemplate:
         assert "Hello<end_of_turn>" in result
         assert result.endswith("<start_of_turn>model\n")
 
-    def test_system_as_user_turn(self):
+    def test_system_prepended_to_first_user(self):
         t = GemmaTemplate()
         result = t.render(SYSTEM_MESSAGES)
-        # Gemma doesn't have native system role
-        assert "<start_of_turn>user\nYou are a pirate.<end_of_turn>" in result
+        # Gemma has no native system role — system folds into the first user turn
+        assert "<start_of_turn>user\nYou are a pirate.\n\nHello<end_of_turn>" in result
+        # Must NOT emit two consecutive user turns (out-of-distribution for Gemma)
+        assert "<end_of_turn>\n<start_of_turn>user" not in result
+        assert result.count("<start_of_turn>user") == 1
+
+    def test_system_prepended_only_to_first_user_in_multi_turn(self):
+        t = GemmaTemplate()
+        result = t.render(MULTI_TURN)
+        # System merges into the first user turn only
+        assert "<start_of_turn>user\nBe brief.\n\nHi<end_of_turn>" in result
+        # Second user turn is unmodified
+        assert "<start_of_turn>user\nHow are you?<end_of_turn>" in result
+        assert result.count("<start_of_turn>user") == 2
 
     def test_stop_tokens(self):
         t = GemmaTemplate()
