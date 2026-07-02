@@ -19,12 +19,19 @@ from tightwad.service import (
 def test_systemd_template_renders():
     content = SYSTEMD_TEMPLATE.substitute(
         exec_start="/usr/bin/tightwad -c /etc/tightwad.yaml start",
+        exec_stop="/usr/bin/tightwad -c /etc/tightwad.yaml stop",
         config_path="/etc/tightwad.yaml",
     )
     assert "ExecStart=/usr/bin/tightwad" in content
     assert "TIGHTWAD_CONFIG=/etc/tightwad.yaml" in content
     assert "Restart=on-failure" in content
     assert "[Install]" in content
+    # `tightwad start` is one-shot: it forks llama-server and exits.
+    # Type=simple would treat that exit as deactivation and kill the cgroup.
+    assert "Type=forking" in content
+    assert "PIDFile=" in content
+    assert "ExecStop=/usr/bin/tightwad" in content
+    assert "Type=simple" not in content
 
 
 def test_launchd_template_renders():
@@ -36,7 +43,11 @@ def test_launchd_template_renders():
     assert "com.tightwad.server" in content
     assert "/usr/local/bin/tightwad" in content
     assert "RunAtLoad" in content
-    assert "KeepAlive" in content
+    # llama-server stays in the job's process group after the one-shot CLI
+    # exits; without AbandonProcessGroup launchd SIGKILLs it, and KeepAlive
+    # then respawns the job in an infinite kill/reload loop.
+    assert "AbandonProcessGroup" in content
+    assert "KeepAlive" not in content
 
 
 def test_install_service_linux(tmp_path):

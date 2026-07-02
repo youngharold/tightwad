@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Streaming responses no longer drop the final round's pre-stop text.** When a stop sequence landed mid-chunk, the SSE path blanked the whole chunk before yielding, so streamed output was silently shorter than the non-streaming output for the same request (up to a full speculation round of answer tail — and chat requests always merge template stop tokens like `<|im_end|>`, so this hit most streamed chats). The stream now emits exactly the not-yet-streamed text before the stop match.
+- **`draft_tokens_parallel` no longer crashes when every drafter resolves in the first wait.** With a single configured drafter (deterministic), a drafter that failed fast, or same-cycle completions, `asyncio.wait()` was called on an empty pending set and raised `ValueError` — which, under the default `fallback_on_draft_failure=true`, silently disabled speculative decoding for every request.
+- **`tightwad stop` (and hot-swap) now waits for the coordinator to actually exit**, polling up to 30s after SIGTERM and escalating to SIGKILL, instead of returning immediately. Previously `tightwad swap` launched the new llama-server while the old one still held the HTTP port and VRAM — the new server died on bind/OOM while the CLI reported a successful swap.
+- **Process liveness checks now work on Windows.** `os.kill(pid, 0)` is not a liveness probe there (signal 0 maps to `GenerateConsoleCtrlEvent`), so stale-pidfile recovery never triggered: `start` stayed locked out after any unclean shutdown, `status` reported dead coordinators as running, and `stop` crashed with `OSError`. A portable `_pid_alive()` (OpenProcess/GetExitCodeProcess on Windows) now backs `start`/`stop`/`status`.
+- **systemd service template no longer kills the server it just started.** The simple service type treated the one-shot `tightwad start` CLI's exit as service deactivation and reaped the whole cgroup — including llama-server, right after the model finished loading. Now `Type=forking` with `PIDFile=` and an `ExecStop=`.
+- **launchd service template no longer kill/reload-loops.** `KeepAlive=true` without `AbandonProcessGroup` made launchd SIGKILL llama-server as soon as the one-shot CLI exited, then respawn it, forever (continuous multi-GB model reloads). The plist now sets `AbandonProcessGroup=true` and drops `KeepAlive`.
+- **`--skip-version-check` is honored on the streaming-load path.** `start_and_reclaim` dropped the flag when a large model triggered pre-warm, so startup failed on version mismatch *after* minutes of reading the GGUF — precisely the situation the flag exists for.
+- **Startup health waits detect a crashed coordinator immediately.** If llama-server exited during startup (bad GGUF, VRAM OOM, bad flags), `start`/`load` polled `/health` for the full 300s timeout against a dead PID; both wait loops now break as soon as the process is gone and point at the coordinator log.
+- **pytest collection no longer aborts on `tests/e2e_loader_test.py`** (a manual harness that exits at import time); collection is restricted to `test_*.py`. Added `httpx2` to dev extras for Starlette ≥1.x's TestClient. Renamed `tightwad init`'s `--local` coordinator port flag to `--local-port` — it silently shadowed the repeatable `--port` scan option.
+
 ## [0.5.4] - 2026-04-27
 
 ### Changed

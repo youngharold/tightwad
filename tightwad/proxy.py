@@ -487,6 +487,12 @@ class SpeculativeProxy:
                 except Exception as exc:
                     logger.warning("Drafter failed: %s", exc)
 
+            # Every drafter already resolved (single drafter, fast failures,
+            # or same-cycle completion) — asyncio.wait() on an empty set
+            # raises ValueError.
+            if not pending:
+                break
+
             # If we have a llamacpp result, give others 0.3s to finish
             if has_llamacpp and pending:
                 done2, pending = await asyncio.wait(pending, timeout=0.3)
@@ -1152,8 +1158,14 @@ class SpeculativeProxy:
                         for s in stop:
                             idx = generated.find(s)
                             if idx != -1:
+                                # Emit only the not-yet-streamed text before
+                                # the stop match; earlier chunks are already
+                                # on the wire. Blanking the whole chunk would
+                                # drop the final round's pre-stop text that
+                                # the non-streaming path returns.
+                                already_streamed = len(generated) - len(chunk)
+                                chunk = chunk[:max(0, idx - already_streamed)]
                                 generated = generated[:idx]
-                                chunk = ""
                                 done = True
                                 break
 

@@ -19,8 +19,13 @@ Description=Tightwad inference cluster manager
 After=network.target
 
 [Service]
-Type=simple
+# `tightwad start` forks llama-server and exits; the simple service type
+# would treat that exit as deactivation and reap the whole cgroup,
+# killing llama-server right after the model loads.
+Type=forking
+PIDFile=%h/.tightwad/coordinator.pid
 ExecStart=$exec_start
+ExecStop=$exec_stop
 Environment=TIGHTWAD_CONFIG=$config_path
 Restart=on-failure
 RestartSec=5
@@ -50,7 +55,7 @@ LAUNCHD_TEMPLATE = Template("""\
     </dict>
     <key>RunAtLoad</key>
     <true/>
-    <key>KeepAlive</key>
+    <key>AbandonProcessGroup</key>
     <true/>
     <key>StandardOutPath</key>
     <string>$log_dir/tightwad-service.log</string>
@@ -112,6 +117,7 @@ def install_service(config_path: str, user: bool = True) -> tuple[str, Path]:
 
         content = SYSTEMD_TEMPLATE.substitute(
             exec_start=f"{binary} -c {config_path} start",
+            exec_stop=f"{binary} -c {config_path} stop",
             config_path=config_path,
         )
         unit_path.write_text(content)

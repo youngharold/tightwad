@@ -164,6 +164,7 @@ def load_model(
     ram_reclaim: str | None = None,
     wait_timeout: float = 300.0,
     progress_callback=None,
+    skip_version_check: bool = False,
 ) -> LoadResult:
     """Full load lifecycle: parse GGUF, pre-warm, start coordinator, reclaim.
 
@@ -242,12 +243,19 @@ def load_model(
 
     # Start coordinator
     t_start = time.monotonic()
-    pid = coordinator.start(config, model_name)
+    pid = coordinator.start(config, model_name,
+                            skip_version_check=skip_version_check)
 
     # Wait for health
     deadline = time.monotonic() + wait_timeout
     healthy = False
     while time.monotonic() < deadline:
+        if not coordinator._pid_alive(pid):
+            logger.error(
+                "Coordinator (PID %d) exited during startup — see %s",
+                pid, coordinator.COORDINATOR_LOG,
+            )
+            break
         health = check_coordinator_health("127.0.0.1", config.coordinator_port)
         if health.get("alive"):
             healthy = True

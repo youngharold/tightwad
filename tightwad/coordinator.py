@@ -24,6 +24,44 @@ LOGDIR = Path.home() / ".tightwad" / "logs"
 COORDINATOR_LOG = LOGDIR / "coordinator.log"
 
 
+def _pid_alive(pid: int) -> bool:
+    """Portable process-liveness probe.
+
+    ``os.kill(pid, 0)`` is not a liveness check on Windows: CPython routes
+    signal 0 to GenerateConsoleCtrlEvent(CTRL_C_EVENT), which succeeds (or
+    raises plain OSError, never ProcessLookupError) for dead PIDs — so
+    stale-pidfile recovery would never trigger there.
+    """
+    if os.name == "nt":
+        import ctypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+        )
+        if not handle:
+            return False
+        try:
+            exit_code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return False
+            return exit_code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Process exists but is owned by another user
+        return True
+    except OSError:
+        return False
+
+
 def _write_pidfile(pid: int, port: int, config_path: str | None = None,
                    model_name: str | None = None) -> None:
     """Write JSON metadata to the pidfile."""
@@ -181,14 +219,12 @@ def start(
     pidfile_data = _read_pidfile()
     if pidfile_data is not None:
         pid = pidfile_data["pid"]
-        try:
-            os.kill(pid, 0)
+        if _pid_alive(pid):
             raise RuntimeError(
                 f"Coordinator already running (PID {pid}). "
                 "Use 'tightwad stop' first."
             )
-        except ProcessLookupError:
-            PIDFILE.unlink()
+        PIDFILE.unlink()
 
     # Health-check RPC workers
     worker_statuses = check_all_workers(config)
@@ -250,8 +286,15 @@ def start(
     return proc.pid
 
 
-def stop() -> bool:
-    """Stop the coordinator llama-server."""
+def stop(wait_timeout: float = 30.0) -> bool:
+    """Stop the coordinator llama-server.
+
+    Blocks until the process has actually exited (up to *wait_timeout*
+    seconds, escalating to SIGKILL) so callers like ``swap_model()`` can
+    immediately rebind the HTTP port and reuse the freed VRAM. Returning
+    right after SIGTERM would race the replacement server against a
+    multi-second llama-server teardown.
+    """
     pidfile_data = _read_pidfile()
     if pidfile_data is None:
         return False
@@ -259,8 +302,27 @@ def stop() -> bool:
     pid = pidfile_data["pid"]
     try:
         os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
+    except OSError:
+        # Already gone (POSIX ProcessLookupError) or an invalid handle on
+        # Windows, where os.kill(SIGTERM) is TerminateProcess.
         pass
+    else:
+        deadline = time.monotonic() + wait_timeout
+        while _pid_alive(pid) and time.monotonic() < deadline:
+            time.sleep(0.2)
+        if _pid_alive(pid):
+            sigkill = getattr(signal, "SIGKILL", signal.SIGTERM)
+            logger.warning(
+                "Coordinator (PID %d) still running %.0fs after SIGTERM — "
+                "sending SIGKILL", pid, wait_timeout,
+            )
+            try:
+                os.kill(pid, sigkill)
+            except OSError:
+                pass
+            kill_deadline = time.monotonic() + 5.0
+            while _pid_alive(pid) and time.monotonic() < kill_deadline:
+                time.sleep(0.1)
     PIDFILE.unlink(missing_ok=True)
     return True
 
@@ -277,10 +339,9 @@ def status(config: ClusterConfig | None = None) -> dict:
     pidfile_data = _read_pidfile()
     if pidfile_data is not None:
         coord_pid = pidfile_data["pid"]
-        try:
-            os.kill(coord_pid, 0)
+        if _pid_alive(coord_pid):
             coord_running = True
-        except ProcessLookupError:
+        else:
             PIDFILE.unlink(missing_ok=True)
             coord_pid = None
             pidfile_data = None
@@ -383,6 +444,7 @@ def start_and_reclaim(
                 result = load_model(
                     config, model_name, ram_reclaim=mode,
                     wait_timeout=wait_timeout,
+                    skip_version_check=skip_version_check,
                 )
                 return result.pid, result.reclaim_result
 
@@ -393,6 +455,12 @@ def start_and_reclaim(
     deadline = time.monotonic() + wait_timeout
     healthy = False
     while time.monotonic() < deadline:
+        if not _pid_alive(pid):
+            logger.error(
+                "Coordinator (PID %d) exited during startup — see %s",
+                pid, COORDINATOR_LOG,
+            )
+            return pid, None
         health = check_coordinator_health("127.0.0.1", config.coordinator_port)
         if health.get("alive"):
             healthy = True

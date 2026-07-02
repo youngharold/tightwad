@@ -370,3 +370,142 @@ class TestGenerateCompletion:
         assert result["choices"][0]["finish_reason"] in ("stop", "length")
 
         await proxy.close()
+
+
+# ---------------------------------------------------------------------------
+# Streaming stop-sequence handling
+# ---------------------------------------------------------------------------
+
+
+class TestStreamingStopSequences:
+    """Streamed output must match non-streamed output when a stop sequence
+    lands mid-chunk (regression: the final round's pre-stop text was
+    dropped from the SSE stream)."""
+
+    def _mock_rounds(self, proxy, rounds):
+        seq = list(rounds)
+
+        async def fake_round(prompt, temperature=0.0):
+            if seq:
+                return seq.pop(0), False, 0.0, 0.0
+            return "", True, 0.0, 0.0
+
+        proxy.speculation_round = fake_round
+
+    async def _collect_sse_text(self, sse_gen):
+        text = ""
+        async for event in sse_gen:
+            for line in event.splitlines():
+                if line.startswith("data: ") and line != "data: [DONE]":
+                    payload = json.loads(line[len("data: "):])
+                    text += payload["choices"][0]["text"]
+        return text
+
+    @pytest.mark.asyncio
+    async def test_streaming_emits_pre_stop_text(self):
+        rounds = ["Hello wor", "ld STOP tail"]
+
+        proxy = SpeculativeProxy(_ollama_config())
+        self._mock_rounds(proxy, rounds)
+        streamed = await self._collect_sse_text(
+            await proxy.generate_completion(
+                prompt="p", max_tokens=100, temperature=0.0,
+                stream=True, stop=["STOP"],
+            )
+        )
+        await proxy.close()
+
+        proxy = SpeculativeProxy(_ollama_config())
+        self._mock_rounds(proxy, rounds)
+        result = await proxy.generate_completion(
+            prompt="p", max_tokens=100, temperature=0.0,
+            stream=False, stop=["STOP"],
+        )
+        await proxy.close()
+
+        assert result["choices"][0]["text"] == "Hello world "
+        assert streamed == "Hello world "
+
+    @pytest.mark.asyncio
+    async def test_streaming_stop_spanning_chunk_boundary(self):
+        """Stop match starting in an already-streamed chunk must not raise
+        and must not emit anything past the stop."""
+        rounds = ["Hello ST", "OP tail"]
+
+        proxy = SpeculativeProxy(_ollama_config())
+        self._mock_rounds(proxy, rounds)
+        streamed = await self._collect_sse_text(
+            await proxy.generate_completion(
+                prompt="p", max_tokens=100, temperature=0.0,
+                stream=True, stop=["STOP"],
+            )
+        )
+        await proxy.close()
+
+        assert "OP tail" not in streamed
+        assert streamed.startswith("Hello ")
+
+
+# ---------------------------------------------------------------------------
+# draft_tokens_parallel edge cases
+# ---------------------------------------------------------------------------
+
+
+class TestDraftTokensParallel:
+    """Regression: asyncio.wait() was called on an empty pending set when
+    every drafter resolved in the first wait (single drafter, fast
+    failures, or same-cycle completion), raising ValueError."""
+
+    def _proxy_with_drafters(self, endpoints):
+        cfg = _llamacpp_config(drafters=list(endpoints))
+        return SpeculativeProxy(cfg)
+
+    @pytest.mark.asyncio
+    async def test_single_drafter_does_not_crash(self):
+        ep = ServerEndpoint(
+            url="http://d1:8081", model_name="d1", backend="llamacpp",
+        )
+        proxy = self._proxy_with_drafters([ep])
+        tokens = [DraftToken(token_id=1, logprob=-0.1, text="hi")]
+
+        async def fake_draft(endpoint, client, prompt, n, temperature):
+            return tokens
+
+        proxy._draft_from_endpoint = fake_draft
+        result = await proxy.draft_tokens_parallel("p", 4)
+        await proxy.close()
+        assert result == tokens
+
+    @pytest.mark.asyncio
+    async def test_one_drafter_down_does_not_crash(self):
+        eps = [
+            ServerEndpoint(url="http://d1:8081", model_name="d1", backend="llamacpp"),
+            ServerEndpoint(url="http://d2:8081", model_name="d2", backend="llamacpp"),
+        ]
+        proxy = self._proxy_with_drafters(eps)
+        tokens = [DraftToken(token_id=1, logprob=-0.1, text="hi")]
+
+        async def fake_draft(endpoint, client, prompt, n, temperature):
+            if endpoint.model_name == "d1":
+                raise ConnectionError("connection refused")
+            return tokens
+
+        proxy._draft_from_endpoint = fake_draft
+        result = await proxy.draft_tokens_parallel("p", 4)
+        await proxy.close()
+        assert result == tokens
+
+    @pytest.mark.asyncio
+    async def test_all_drafters_down_returns_empty(self):
+        eps = [
+            ServerEndpoint(url="http://d1:8081", model_name="d1", backend="llamacpp"),
+        ]
+        proxy = self._proxy_with_drafters(eps)
+
+        async def fake_draft(endpoint, client, prompt, n, temperature):
+            raise ConnectionError("connection refused")
+
+        proxy._draft_from_endpoint = fake_draft
+        result = await proxy.draft_tokens_parallel("p", 4)
+        await proxy.close()
+        assert result == []

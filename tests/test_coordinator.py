@@ -225,3 +225,68 @@ def test_pidfile_missing(tmp_path, monkeypatch):
     pidfile = tmp_path / "nonexistent.pid"
     monkeypatch.setattr("tightwad.coordinator.PIDFILE", pidfile)
     assert _read_pidfile() is None
+
+
+# ---------------------------------------------------------------------------
+# Process liveness + stop() semantics
+# ---------------------------------------------------------------------------
+
+import os
+
+from tightwad import coordinator as coord
+
+
+def test_pid_alive_self_and_dead():
+    import subprocess
+    assert coord._pid_alive(os.getpid()) is True
+    proc = subprocess.Popen(["/bin/sleep", "0"] if os.name != "nt" else ["cmd", "/c", "exit"])
+    proc.wait()
+    assert coord._pid_alive(proc.pid) is False
+
+
+def test_stop_waits_for_exit(tmp_path, monkeypatch):
+    """stop() must block until the PID is actually gone (regression:
+    swap_model raced the old llama-server for the port/VRAM)."""
+    pidfile = tmp_path / "coordinator.pid"
+    monkeypatch.setattr("tightwad.coordinator.PIDFILE", pidfile)
+    coord._write_pidfile(pid=12345, port=8080)
+
+    alive = {"value": True}
+    kills = []
+
+    def fake_kill(pid, sig):
+        kills.append((pid, sig))
+        alive["value"] = False  # dies on first signal
+
+    monkeypatch.setattr("tightwad.coordinator.os.kill", fake_kill)
+    monkeypatch.setattr(
+        "tightwad.coordinator._pid_alive", lambda pid: alive["value"]
+    )
+
+    assert coord.stop() is True
+    assert not pidfile.exists()
+    assert kills and kills[0][0] == 12345
+
+
+def test_stop_escalates_to_sigkill(tmp_path, monkeypatch):
+    """A process ignoring SIGTERM gets SIGKILL after the wait timeout."""
+    import signal as signal_mod
+    pidfile = tmp_path / "coordinator.pid"
+    monkeypatch.setattr("tightwad.coordinator.PIDFILE", pidfile)
+    coord._write_pidfile(pid=12345, port=8080)
+
+    sigkill = getattr(signal_mod, "SIGKILL", signal_mod.SIGTERM)
+    kills = []
+
+    def fake_kill(pid, sig):
+        kills.append(sig)
+
+    monkeypatch.setattr("tightwad.coordinator.os.kill", fake_kill)
+    # Survives SIGTERM, dies only on SIGKILL
+    monkeypatch.setattr(
+        "tightwad.coordinator._pid_alive", lambda pid: sigkill not in kills
+    )
+
+    assert coord.stop(wait_timeout=0.3) is True
+    assert not pidfile.exists()
+    assert kills == [signal_mod.SIGTERM, sigkill]
