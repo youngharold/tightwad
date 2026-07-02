@@ -86,7 +86,7 @@ A fast small model (e.g., 1.7B on any CPU or cheap GPU) drafts candidate tokens,
 
 ### 3. Multi-Drafter Consensus — Skip the GPU when drafters agree
 
-**Race multiple cheap machines in parallel.** Each drafter generates candidate tokens simultaneously; when they agree, the expensive GPU verification is skipped entirely. More drafters = more tokens bypass the bottleneck. Three consensus modes: `strict` (unanimous), `majority` (>50%), `any_disagree` (verify on any disagreement). Tree-based speculation handles branching draft paths, and Prometheus metrics expose consensus accept/fallback rates.
+**Race multiple cheap machines in parallel.** Each drafter generates candidate tokens simultaneously; when they agree, the expensive GPU verification is skipped entirely. More drafters = more tokens bypass the bottleneck. Three consensus modes: `strict` (unanimous), `majority` (>50%), `any_disagree` (verify on any disagreement). Prometheus metrics expose consensus accept/fallback rates.
 
 ### 4. RPC Cluster — Pool GPUs into one endpoint
 
@@ -1053,7 +1053,7 @@ All endpoints support `stream: true` for SSE streaming. The WebSocket endpoint a
 
 > **Auto-Tune:** Set `max_draft_tokens: auto` in your config (or `TIGHTWAD_MAX_DRAFT_TOKENS=auto`) to let the proxy optimize draft count at runtime. It adjusts based on rolling acceptance rates and draft-vs-verify timing — increasing when drafts are cheap and acceptance is high, decreasing when they're not. Most users should use `auto`.
 
-> **Draft-Verify Pipelining:** The proxy can overlap drafting round N+1 with verifying round N. When acceptance is high (73-100% with same-family models), the optimistic draft is ready immediately when verification completes, nearly doubling throughput.
+> **Draft-Verify Pipelining (experimental):** The proxy contains a pipelined generation path that overlaps drafting round N+1 with verifying round N — when acceptance is high, the optimistic draft is ready as soon as verification completes. This path is implemented but **not yet wired into the request handlers** (no streaming path / config switch); it is tracked for a future release and is not active on the default request path today.
 
 ## Hardware Setup
 
