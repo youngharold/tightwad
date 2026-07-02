@@ -82,7 +82,7 @@ RPC GPU Pool (any mix: CUDA + ROCm + Metal, running 70B)
 
 ### 2. Speculative Decoding Proxy — Draft + Verify across machines
 
-A fast small model (e.g., 1.7B on any CPU or cheap GPU) drafts candidate tokens, a large model (e.g., 32B-72B) verifies them in batch. Output quality is **equivalent to running the large model alone** (mathematically identical under greedy decoding), but up to 2x faster because batch verification is much cheaper than autoregressive generation. Network traffic: **bytes** (token IDs only). Works with local targets or cloud APIs. Supports Ollama + llama.cpp backends with full OpenAI/SSE compatibility.
+A fast small model (e.g., 1.7B on any CPU or cheap GPU) drafts candidate tokens, a large model (e.g., 32B-72B) verifies them in batch. Output quality is **equivalent to running the large model alone**: a draft token is accepted only when it exactly matches the token the large model itself generated at that position (sampled-path matching — exact at temperature=0 and temperature>0 alike; distribution-preserving ratio-test rejection sampling, which would accept more tokens at high temperature, is future work). Up to 2x faster because batch verification is much cheaper than autoregressive generation. Network traffic: **bytes** (token IDs only). Works with local targets or cloud APIs. Supports Ollama + llama.cpp backends with full OpenAI/SSE compatibility.
 
 ### 3. Multi-Drafter Consensus — Skip the GPU when drafters agree
 

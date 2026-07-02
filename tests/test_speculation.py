@@ -10,6 +10,7 @@ from tightwad.speculation import (
     VerificationResult,
     verify_draft_tokens,
     verify_greedy,
+    verify_stochastic,
 )
 
 
@@ -83,7 +84,41 @@ class TestGreedyVerification:
         assert result.bonus_token is None
 
 
+class TestTemperatureRouting:
+    """Regression: temperature>0 used to route to free-run rejection
+    sampling, which is biased without teacher forcing — all temperatures
+    must use exact sampled-path matching."""
+
+    def test_nonzero_temperature_rejects_mismatch_deterministically(self):
+        # Under rejection sampling this accepts with probability
+        # min(1, e^-0.1 / e^-0.5) = 1.0; exact matching must reject at
+        # position 0 regardless of RNG state.
+        draft = [_draft(1, logprob=-0.5)]
+        target = [TargetLogprob(token_id=2, logprob=-0.1, draft_token_logprob=-0.1)]
+
+        result = verify_draft_tokens(draft, target, temperature=1.0)
+
+        assert result.accepted_count == 0
+        assert result.rejected_at == 0
+        assert result.resample_token is not None
+        assert result.resample_token.token_id == 2
+
+    def test_nonzero_temperature_accepts_exact_match(self):
+        draft = [_draft(1), _draft(2)]
+        target = [_target(1), _target(2), _target(3)]
+
+        result = verify_draft_tokens(draft, target, temperature=0.9)
+
+        assert result.accepted_count == 2
+        assert result.bonus_token is not None
+        assert result.bonus_token.token_id == 3
+
+
 class TestStochasticVerification:
+    """Unit coverage for verify_stochastic, which is dead code kept for a
+    future teacher-forced implementation (verify_draft_tokens no longer
+    routes to it at any temperature)."""
+
     def test_matching_tokens_always_accepted(self):
         """When draft and target agree, acceptance prob = 1.0."""
         random.seed(42)
@@ -91,7 +126,7 @@ class TestStochasticVerification:
         target = [_target(1, logprob=-0.5), _target(2, logprob=-0.5)]
 
         # Same tokens, same probs → always accept
-        result = verify_draft_tokens(draft, target, temperature=1.0)
+        result = verify_stochastic(draft, target)
         assert result.accepted_count == 2
 
     def test_low_prob_draft_likely_rejected(self):
@@ -106,7 +141,7 @@ class TestStochasticVerification:
             draft_token_logprob=-10.0,  # target assigns ~0.00005 to token 1
         )]
 
-        result = verify_draft_tokens(draft, target, temperature=1.0)
+        result = verify_stochastic(draft, target)
         # Very likely to reject since P_target/P_draft ≈ 0.00005
         assert result.rejected_at == 0
 
@@ -118,7 +153,7 @@ class TestStochasticVerification:
             TargetLogprob(token_id=5, logprob=-0.5),  # bonus
         ]
 
-        result = verify_draft_tokens(draft, target, temperature=1.0)
+        result = verify_stochastic(draft, target)
         assert result.accepted_count == 1
         assert result.bonus_token is not None
         assert result.bonus_token.token_id == 5

@@ -255,3 +255,46 @@ class TestSSEFormat:
     def test_sse_done_marker(self):
         line = "data: [DONE]"
         assert line == "data: [DONE]"
+
+
+class TestChatStreamingSSE:
+    """Regression: /v1/chat/completions with stream=true used to re-emit raw
+    text_completion events, breaking clients that read delta.content."""
+
+    def test_chat_stream_emits_chat_completion_chunks(self, proxy_config):
+        from tightwad import proxy as proxy_mod
+
+        proxy_mod.reset_proxy_state()
+        app = create_app(proxy_config)
+        seq = ["Hello", " world"]
+
+        async def fake_round(prompt, temperature=0.0):
+            if seq:
+                return seq.pop(0), False, 0.0, 0.0, 2, 2
+            return "", True, 0.0, 0.0, 0, 0
+
+        proxy_mod._proxy.speculation_round = fake_round
+
+        client = TestClient(app)
+        resp = client.post("/v1/chat/completions", json={
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": True,
+            "max_tokens": 50,
+        })
+        assert resp.status_code == 200
+        assert resp.headers["content-type"].startswith("text/event-stream")
+
+        lines = [l for l in resp.text.splitlines() if l.startswith("data: ")]
+        assert lines[-1] == "data: [DONE]"
+        payloads = [json.loads(l[len("data: "):]) for l in lines[:-1]]
+
+        assert all(p["object"] == "chat.completion.chunk" for p in payloads)
+        assert all(p["id"].startswith("chatcmpl-") for p in payloads)
+        assert all(p["model"] == "qwen3-32b" for p in payloads)
+        assert payloads[0]["choices"][0]["delta"]["role"] == "assistant"
+        content = "".join(
+            p["choices"][0]["delta"].get("content", "") for p in payloads
+        )
+        assert content == "Hello world"
+        assert payloads[-1]["choices"][0]["delta"] == {}
+        assert payloads[-1]["choices"][0]["finish_reason"] == "stop"

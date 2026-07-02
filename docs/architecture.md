@@ -103,7 +103,7 @@ The pool is slow autoregressive (3 tok/s over WiFi), but batch verification amor
 
 **Why this is fast:** Without speculation, the target generates 1 token per forward pass. With speculation, it verifies K tokens in 1 forward pass (batch verification is almost as cheap as single-token generation). If the draft model is good, most tokens get accepted.
 
-**Why output is identical:** The target model has final say on every token. Rejected tokens are replaced with the target's choice. With greedy decoding (temperature=0), output is mathematically equivalent to running the target alone.
+**Why output is identical:** The target model has final say on every token: a draft token is accepted only if it exactly matches the token the target itself generated at that position, and rejected tokens are replaced with the target's choice. This sampled-path matching holds at every temperature — the emitted text is exactly the target's own (greedy or sampled) continuation for the request. Leviathan/Chen ratio-test rejection sampling, which would preserve the output distribution while accepting more tokens at temperature>0, requires teacher-forced verification and is future work.
 
 ## Network Traffic
 

@@ -213,21 +213,23 @@ class TestRequestRecordRingBuffer:
 
 class TestSpeculationRoundTiming:
     @pytest.mark.asyncio
-    async def test_speculation_round_returns_four_tuple(self, proxy_config):
-        """speculation_round should return (text, is_done, draft_ms, verify_ms)."""
+    async def test_speculation_round_returns_six_tuple(self, proxy_config):
+        """speculation_round returns (text, is_done, draft_ms, verify_ms,
+        round_drafted, round_accepted)."""
         proxy = SpeculativeProxy(proxy_config)
         # Both servers are down, fallback_on_draft_failure=True
         # Draft will fail -> fallback to target -> target also fails -> exception
         # But we can test the return signature by catching the error
         try:
             result = await proxy.speculation_round("test prompt")
-            # If it somehow succeeds, check it's a 4-tuple
-            assert len(result) == 4
-            text, done, d_ms, v_ms = result
+            assert len(result) == 6
+            text, done, d_ms, v_ms, drafted, accepted = result
             assert isinstance(d_ms, float)
             assert isinstance(v_ms, float)
+            assert isinstance(drafted, int)
+            assert isinstance(accepted, int)
         except Exception:
             # Expected since servers are down; the important thing is
-            # the function signature changed to return 4 values
+            # the return signature
             pass
         await proxy.close()

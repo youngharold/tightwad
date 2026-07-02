@@ -87,9 +87,18 @@ def verify_stochastic(
     draft_tokens: list[DraftToken],
     target_logprobs: list[TargetLogprob],
 ) -> VerificationResult:
-    """Verify draft tokens with standard rejection sampling.
+    """Rejection-sampling verification — currently UNUSED (dead code).
 
     Accept token i with probability min(1, P_target(token_i) / P_draft(token_i)).
+
+    .. note::
+        Not wired into :func:`verify_draft_tokens`. True Leviathan/Chen
+        rejection sampling requires teacher-forcing the draft tokens on the
+        target (so position ``i`` is conditioned on the draft prefix) and
+        residual resampling from ``max(0, p - q)`` on rejection. The proxy
+        free-runs the target, which breaks both preconditions, so all
+        temperatures use exact sampled-path matching instead. Kept pending
+        a teacher-forced implementation.
     """
     accepted: list[DraftToken] = []
 
@@ -145,10 +154,16 @@ def verify_draft_tokens(
     target_logprobs: list[TargetLogprob],
     temperature: float = 0.0,
 ) -> VerificationResult:
-    """Verify draft tokens against target model logprobs.
+    """Verify draft tokens against the target's own generated tokens.
 
-    At temperature=0, uses greedy comparison (accept iff argmax matches).
-    At temperature>0, uses standard rejection sampling.
+    Accepts draft token i iff it exactly matches the token the target
+    produced at position i (sampled-path matching). At temperature=0 that
+    is standard greedy verification; at temperature>0 the target's tokens
+    are samples, and matching them exactly keeps the emitted text identical
+    to what the target alone would have produced for this request — at the
+    cost of lower acceptance rates. Ratio-test rejection sampling
+    (Leviathan/Chen) needs teacher-forced target logprobs and is future
+    work — see :func:`verify_stochastic`.
     """
     if not draft_tokens:
         # Empty draft — nothing to verify
@@ -163,10 +178,11 @@ def verify_draft_tokens(
             rejected_at=None,
         )
 
-    if temperature == 0.0:
-        return verify_greedy(draft_tokens, target_logprobs)
-    else:
-        return verify_stochastic(draft_tokens, target_logprobs)
+    # Exact-match acceptance for ALL temperatures: the target logprobs come
+    # from a free-running generation, so position i is conditioned on the
+    # target's own prefix. Matching that sampled path exactly is the only
+    # acceptance rule that leaves the output unchanged.
+    return verify_greedy(draft_tokens, target_logprobs)
 
 
 # ---------------------------------------------------------------------------
@@ -235,10 +251,15 @@ def verify_consensus(
     disagreed_at: int | None = None
 
     for pos in range(min_len):
-        # Count occurrences of each token_id at this position
-        ids = [drafter_outputs[d][pos].token_id for d in range(n_drafters)]
-        counter = Counter(ids)
-        most_common_id, most_common_count = counter.most_common(1)[0]
+        # Count occurrences of each (token_id, text) at this position.
+        # Keying on token_id alone would treat any two Ollama-style text
+        # blobs (always token_id=0) as unanimous regardless of their text.
+        keys = [
+            (drafter_outputs[d][pos].token_id, drafter_outputs[d][pos].text)
+            for d in range(n_drafters)
+        ]
+        counter = Counter(keys)
+        most_common_key, most_common_count = counter.most_common(1)[0]
         rate = most_common_count / n_drafters
         agreement_rates.append(rate)
 
@@ -253,10 +274,11 @@ def verify_consensus(
         elif mode is ConsensusMode.MAJORITY:
             if most_common_count > n_drafters / 2:
                 # Majority agrees — pick token from a drafter that produced
-                # the majority token_id.
+                # the majority (token_id, text).
                 for d in range(n_drafters):
-                    if drafter_outputs[d][pos].token_id == most_common_id:
-                        accepted.append(drafter_outputs[d][pos])
+                    tok = drafter_outputs[d][pos]
+                    if (tok.token_id, tok.text) == most_common_key:
+                        accepted.append(tok)
                         break
             else:
                 disagreed_at = pos

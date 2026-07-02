@@ -118,6 +118,44 @@ class TestBuildBranchingTree:
         tree = build_branching_tree([])
         assert tree.n_paths == 0
 
+    def test_strict_prefix_keeps_longer_draft(self):
+        """Regression: when one draft was a strict prefix of another, the
+        longer draft's tail was silently dropped."""
+        drafts = [
+            [_d(1), _d(2)],
+            [_d(1), _d(2), _d(3), _d(4)],
+        ]
+        tree = build_branching_tree(drafts)
+        assert tree.n_paths == 1
+        assert tree.longest_path_length == 4
+        assert [t.token_id for t in tree.all_paths()[0]] == [1, 2, 3, 4]
+        assert tree.total_nodes == 4
+        assert tree.branch_points == 0
+
+    def test_strict_prefix_multiple_longer_drafts(self):
+        """Only the longest tail is attached; total_nodes matches the tree."""
+        drafts = [
+            [_d(1), _d(2)],
+            [_d(1), _d(2), _d(3)],
+            [_d(1), _d(2), _d(3), _d(4)],
+        ]
+        tree = build_branching_tree(drafts)
+        assert tree.n_paths == 1
+        assert tree.longest_path_length == 4
+        assert [t.token_id for t in tree.all_paths()[0]] == [1, 2, 3, 4]
+        assert tree.total_nodes == 4
+
+    def test_identical_drafts_total_nodes(self):
+        drafts = [
+            [_d(1), _d(2), _d(3)],
+            [_d(1), _d(2), _d(3)],
+        ]
+        tree = build_branching_tree(drafts)
+        assert tree.n_paths == 1
+        assert tree.longest_path_length == 3
+        assert tree.total_nodes == 3
+        assert tree.branch_points == 0
+
 
 class TestSpeculationTree:
     def test_longest_path(self):

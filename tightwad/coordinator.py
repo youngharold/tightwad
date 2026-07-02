@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import signal
 import subprocess
 import time
@@ -62,13 +63,57 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
+def _health_host(host: str | None) -> str:
+    """Map a llama-server bind address to an address health checks can reach.
+
+    Wildcard binds (0.0.0.0 / ::) accept loopback connections; a specific
+    bind address does not, so health checks must target it directly.
+    """
+    if host in (None, "", "0.0.0.0", "::", "[::]"):
+        return "127.0.0.1"
+    return host
+
+
+def _boot_time() -> float | None:
+    """Best-effort system boot time as an epoch timestamp, None if unknown."""
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            return time.time() - ctypes.windll.kernel32.GetTickCount64() / 1000.0
+        except Exception:
+            return None
+    # Linux: /proc/stat "btime <epoch>" line
+    try:
+        for line in Path("/proc/stat").read_text().splitlines():
+            if line.startswith("btime "):
+                return float(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        pass
+    # macOS/BSD: sysctl kern.boottime → "{ sec = 1719900000, usec = ... } ..."
+    try:
+        out = subprocess.check_output(
+            ["sysctl", "-n", "kern.boottime"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+        m = re.search(r"sec\s*=\s*(\d+)", out)
+        if m:
+            return float(m.group(1))
+    except Exception:
+        pass
+    return None
+
+
 def _write_pidfile(pid: int, port: int, config_path: str | None = None,
-                   model_name: str | None = None) -> None:
+                   model_name: str | None = None,
+                   host: str | None = None) -> None:
     """Write JSON metadata to the pidfile."""
     PIDFILE.parent.mkdir(parents=True, exist_ok=True)
     data = {
         "pid": pid,
         "port": port,
+        "host": host,
         "config": config_path,
         "model": model_name,
         "started": time.time(),
@@ -89,6 +134,21 @@ def _read_pidfile() -> dict | None:
     try:
         data = json.loads(text)
         if isinstance(data, dict) and "pid" in data:
+            # A pidfile written before the current boot cannot refer to our
+            # process — at best its PID has been recycled by an unrelated
+            # process, which stop() must not signal and start() must not
+            # treat as "already running". Only discard when boot time is
+            # known and clearly after "started" (10s clock-skew tolerance).
+            started = data.get("started")
+            if isinstance(started, (int, float)):
+                boot = _boot_time()
+                if boot is not None and started < boot - 10:
+                    logger.info(
+                        "Discarding stale pidfile (PID %s predates current "
+                        "boot)", data.get("pid"),
+                    )
+                    PIDFILE.unlink(missing_ok=True)
+                    return None
             return data
     except (json.JSONDecodeError, ValueError):
         pass
@@ -281,6 +341,7 @@ def start(
         pid=proc.pid,
         port=config.coordinator_port,
         model_name=model.name,
+        host=config.coordinator_host,
     )
 
     return proc.pid
@@ -346,12 +407,17 @@ def status(config: ClusterConfig | None = None) -> dict:
             coord_pid = None
             pidfile_data = None
 
-    # Determine port: config takes precedence, then pidfile metadata
+    # Determine port/host: config takes precedence, then pidfile metadata
     port = config.coordinator_port if config else pidfile_data.get("port", 8080) if pidfile_data else 8080
+    bind_host = (
+        config.coordinator_host if config
+        else pidfile_data.get("host") if pidfile_data
+        else None
+    )
 
     coord_health = None
     if coord_running:
-        coord_health = check_coordinator_health("127.0.0.1", port)
+        coord_health = check_coordinator_health(_health_host(bind_host), port)
 
     # Workers (requires config)
     worker_statuses = check_all_workers(config) if config else []
@@ -461,7 +527,9 @@ def start_and_reclaim(
                 pid, COORDINATOR_LOG,
             )
             return pid, None
-        health = check_coordinator_health("127.0.0.1", config.coordinator_port)
+        health = check_coordinator_health(
+            _health_host(config.coordinator_host), config.coordinator_port
+        )
         if health.get("alive"):
             healthy = True
             break

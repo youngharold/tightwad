@@ -17,7 +17,12 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from .reclaim import ReclaimResult, get_available_ram_bytes, reclaim_ram
+from .reclaim import (
+    ReclaimResult,
+    get_available_ram_bytes,
+    get_swap_free_bytes,
+    reclaim_ram,
+)
 
 logger = logging.getLogger("tightwad.loader")
 
@@ -54,48 +59,6 @@ def needs_streaming_load(
     if total_available <= 0:
         return True
     return model_size_bytes > (total_available * 0.8)
-
-
-def _get_swap_free_bytes() -> int:
-    """Get free swap in bytes. Best-effort, returns 0 on failure."""
-    if _SYSTEM == "linux":
-        try:
-            meminfo = Path("/proc/meminfo").read_text()
-            for line in meminfo.splitlines():
-                if line.startswith("SwapFree:"):
-                    kb = int(line.split()[1])
-                    return kb * 1024
-        except (FileNotFoundError, ValueError):
-            pass
-        return 0
-    if _SYSTEM == "darwin":
-        # macOS unified memory — swap is managed transparently
-        return 0
-    if _SYSTEM == "windows":
-        try:
-            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-
-            class MEMORYSTATUSEX(ctypes.Structure):
-                _fields_ = [
-                    ("dwLength", ctypes.c_ulong),
-                    ("dwMemoryLoad", ctypes.c_ulong),
-                    ("ullTotalPhys", ctypes.c_ulonglong),
-                    ("ullAvailPhys", ctypes.c_ulonglong),
-                    ("ullTotalPageFile", ctypes.c_ulonglong),
-                    ("ullAvailPageFile", ctypes.c_ulonglong),
-                    ("ullTotalVirtual", ctypes.c_ulonglong),
-                    ("ullAvailVirtual", ctypes.c_ulonglong),
-                    ("ullAvailExtendedVirtual", ctypes.c_ulonglong),
-                ]
-
-            mem = MEMORYSTATUSEX()
-            mem.dwLength = ctypes.sizeof(mem)
-            if kernel32.GlobalMemoryStatusEx(ctypes.byref(mem)):
-                return mem.ullAvailPageFile
-        except Exception:
-            pass
-        return 0
-    return 0
 
 
 def prewarm_sequential(
@@ -218,7 +181,7 @@ def load_model(
 
     if should_prewarm:
         available = get_available_ram_bytes()
-        swap_free = _get_swap_free_bytes()
+        swap_free = get_swap_free_bytes()
         if needs_streaming_load(file_size, available, swap_free):
             logger.info(
                 "Pre-warming %s (%.1f GB, available RAM: %.1f GB)",
@@ -247,6 +210,7 @@ def load_model(
                             skip_version_check=skip_version_check)
 
     # Wait for health
+    health_host = coordinator._health_host(config.coordinator_host)
     deadline = time.monotonic() + wait_timeout
     healthy = False
     while time.monotonic() < deadline:
@@ -256,7 +220,7 @@ def load_model(
                 pid, coordinator.COORDINATOR_LOG,
             )
             break
-        health = check_coordinator_health("127.0.0.1", config.coordinator_port)
+        health = check_coordinator_health(health_host, config.coordinator_port)
         if health.get("alive"):
             healthy = True
             break

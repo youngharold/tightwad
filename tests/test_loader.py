@@ -10,9 +10,9 @@ import pytest
 
 from tightwad.loader import (
     LoadResult,
+    load_model,
     needs_streaming_load,
     prewarm_sequential,
-    _get_swap_free_bytes,
 )
 from tightwad.reclaim import ReclaimResult
 
@@ -157,10 +157,90 @@ class TestSelectStrategy:
 
 
 class TestGetSwapFreeBytes:
-    @patch("tightwad.loader._SYSTEM", "darwin")
-    def test_darwin_returns_zero(self):
-        assert _get_swap_free_bytes() == 0
+    def test_loader_uses_reclaim_helper(self):
+        """Regression: loader had a private Windows swap helper that returned
+        available commit (RAM + swap) instead of swap-only, disagreeing with
+        the streaming-load decision in coordinator.start_and_reclaim."""
+        import tightwad.loader as loader_mod
+        import tightwad.reclaim as reclaim_mod
 
-    @patch("tightwad.loader._SYSTEM", "freebsd")
-    def test_unsupported_returns_zero(self):
-        assert _get_swap_free_bytes() == 0
+        assert not hasattr(loader_mod, "_get_swap_free_bytes")
+        assert loader_mod.get_swap_free_bytes is reclaim_mod.get_swap_free_bytes
+
+    def test_streaming_decision_uses_reclaim_swap(self, monkeypatch, tmp_path):
+        """load_model's pre-warm decision must read swap via tightwad.reclaim."""
+        calls = []
+        monkeypatch.setattr(
+            "tightwad.loader.get_swap_free_bytes",
+            lambda: calls.append(True) or 0,
+        )
+        monkeypatch.setattr(
+            "tightwad.loader.get_available_ram_bytes",
+            lambda: 32 * 1024**3,
+        )
+
+        model_file = tmp_path / "m.gguf"
+        model_file.write_bytes(b"\x00" * 1024)
+        model_cfg = MagicMock()
+        model_cfg.path = str(model_file)
+        config = MagicMock()
+        config.models = {"m": model_cfg}
+        config.coordinator_host = "0.0.0.0"
+        config.coordinator_port = 8080
+        config.ram_reclaim = "off"
+
+        monkeypatch.setattr("tightwad.coordinator.start", lambda *a, **k: 4242)
+        monkeypatch.setattr("tightwad.coordinator._pid_alive", lambda pid: True)
+        monkeypatch.setattr(
+            "tightwad.worker.check_coordinator_health",
+            lambda host, port, timeout=5.0: {"alive": True},
+        )
+        monkeypatch.setattr("tightwad.reclaim.get_process_rss_mb", lambda pid: 0.0)
+
+        result = load_model(config, "m", prewarm=True)
+        assert result.healthy is True
+        assert calls, "loader did not consult reclaim.get_swap_free_bytes"
+
+
+class TestLoadModelHealthHost:
+    def _config(self, tmp_path, host):
+        model_file = tmp_path / "m.gguf"
+        model_file.write_bytes(b"\x00" * 1024)
+        model_cfg = MagicMock()
+        model_cfg.path = str(model_file)
+        config = MagicMock()
+        config.models = {"m": model_cfg}
+        config.coordinator_host = host
+        config.coordinator_port = 8080
+        config.ram_reclaim = "off"
+        return config
+
+    def _patch_lifecycle(self, monkeypatch, hosts):
+        def fake_health(host, port, timeout=5.0):
+            hosts.append(host)
+            return {"alive": True}
+
+        monkeypatch.setattr("tightwad.coordinator.start", lambda *a, **k: 4242)
+        monkeypatch.setattr("tightwad.coordinator._pid_alive", lambda pid: True)
+        monkeypatch.setattr("tightwad.worker.check_coordinator_health", fake_health)
+        monkeypatch.setattr("tightwad.reclaim.get_process_rss_mb", lambda pid: 0.0)
+
+    def test_health_check_uses_config_host(self, tmp_path, monkeypatch):
+        """Regression: health checks were hardcoded to 127.0.0.1, so a
+        non-wildcard bind host never appeared healthy."""
+        hosts = []
+        self._patch_lifecycle(monkeypatch, hosts)
+        config = self._config(tmp_path, "192.168.1.50")
+
+        result = load_model(config, "m", prewarm=False)
+        assert result.healthy is True
+        assert hosts == ["192.168.1.50"]
+
+    def test_wildcard_bind_checks_loopback(self, tmp_path, monkeypatch):
+        hosts = []
+        self._patch_lifecycle(monkeypatch, hosts)
+        config = self._config(tmp_path, "0.0.0.0")
+
+        result = load_model(config, "m", prewarm=False)
+        assert result.healthy is True
+        assert hosts == ["127.0.0.1"]

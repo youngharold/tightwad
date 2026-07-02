@@ -190,18 +190,39 @@ def build_branching_tree(
 
         prefix_nodes[-1].children = branch_nodes
 
-    total_nodes = prefix_len + sum(
-        len(d) - prefix_len for d in drafts[:max_branches]
-        if len(d) > prefix_len
-    )
+        total_nodes = prefix_len + sum(
+            len(d) - prefix_len for d in drafts[:max_branches]
+            if len(d) > prefix_len
+        )
+        branch_points = 1 if len(set(
+            d[prefix_len].token_id for d in drafts
+            if len(d) > prefix_len
+        )) > 1 else 0
+    elif any(len(d) > prefix_len for d in drafts):
+        # One draft is a strict prefix of another (no divergence within
+        # min_len). Keep the longest draft's tail as a linear continuation
+        # instead of silently dropping it.
+        longest = max(drafts, key=len)
+        remaining = longest[prefix_len:]
+        chain = [
+            TreeNode(token=t, depth=prefix_len + i)
+            for i, t in enumerate(remaining)
+        ]
+        for i in range(len(chain) - 1):
+            chain[i].children = [chain[i + 1]]
+        prefix_nodes[-1].children = [chain[0]]
+
+        total_nodes = prefix_len + len(remaining)
+        branch_points = 0
+    else:
+        # All drafts identical up to min_len and none longer — pure chain.
+        total_nodes = prefix_len
+        branch_points = 0
 
     return SpeculationTree(
         roots=[prefix_nodes[0]],
         total_nodes=total_nodes,
-        branch_points=1 if len(set(
-            d[prefix_len].token_id for d in drafts
-            if len(d) > prefix_len
-        )) > 1 else 0,
+        branch_points=branch_points,
     )
 
 

@@ -551,12 +551,14 @@ def check_services(config: ClusterConfig) -> Section:
 
     # Coordinator /health
     if coord_running:
-        health = worker.check_coordinator_health("127.0.0.1", config.coordinator_port)
+        from .coordinator import _health_host
+        health_host = _health_host(config.coordinator_host)
+        health = worker.check_coordinator_health(health_host, config.coordinator_port)
         if health.get("alive"):
             section.results.append(CheckResult(
                 name="Coordinator /health",
                 status=Status.PASS,
-                detail=f"http://127.0.0.1:{config.coordinator_port}/health",
+                detail=f"http://{health_host}:{config.coordinator_port}/health",
             ))
         else:
             section.results.append(CheckResult(

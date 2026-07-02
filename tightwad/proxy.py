@@ -112,6 +112,17 @@ class RequestRecord:
 
 MAX_REQUEST_HISTORY = 50
 
+
+def _est_tokens(n_chars: int) -> int:
+    """Rough chars→tokens estimate (~4 chars/token) for text-blob paths.
+
+    Text-match verification works on character counts (Ollama gives no
+    per-token info), but the shared stats counters are token-denominated —
+    convert before adding so /metrics doesn't mix units.
+    """
+    return max(1, n_chars // 4) if n_chars > 0 else 0
+
+
 # ---------------------------------------------------------------------------
 # Adaptive draft-token tuning
 # ---------------------------------------------------------------------------
@@ -640,12 +651,19 @@ class SpeculativeProxy:
         (matching prefix accepted, first mismatch becomes the resample
         token); the ``N+1``th is the bonus token.
 
-        This is the canonical Leviathan / Chen verification path. It costs
-        ``N+1`` autoregressive forward passes on the target instead of the
-        single prompt-append shortcut the previous implementation used —
-        but the previous shortcut accepted draft tokens unconditionally on
-        same-family pairs, which broke the equivalence guarantee documented
-        in the README. Correctness over micro-optimization.
+        Acceptance is exact sampled-path matching at every temperature: a
+        draft token is kept only if it equals the token the target itself
+        generated at that position, so the emitted text is exactly the
+        target's own continuation for this request. This is NOT
+        Leviathan/Chen ratio-test rejection sampling — that would require
+        teacher-forcing the draft on the target plus residual resampling,
+        which a free-running ``/v1/completions`` call cannot provide, and
+        remains future work. It costs ``N+1`` autoregressive forward passes
+        on the target instead of the single prompt-append shortcut the
+        previous implementation used — but the previous shortcut accepted
+        draft tokens unconditionally on same-family pairs, which broke the
+        equivalence guarantee documented in the README. Correctness over
+        micro-optimization.
 
         Returns VerificationResult with accepted/rejected tokens.
         """
@@ -761,11 +779,14 @@ class SpeculativeProxy:
 
     async def speculation_round(
         self, prompt: str, temperature: float = 0.0
-    ) -> tuple[str, bool, float, float]:
+    ) -> tuple[str, bool, float, float, int, int]:
         """One full draft → verify → accept cycle.
 
-        Returns (accepted_text, is_done, draft_ms, verify_ms).
-        is_done is True if we hit EOS or empty generation.
+        Returns (accepted_text, is_done, draft_ms, verify_ms,
+        round_drafted, round_accepted).  is_done is True if we hit EOS or
+        empty generation.  The per-round counts let callers accumulate
+        request-local totals without diffing the shared ProxyStats (which
+        races under concurrent requests).
         """
         consensus = self._consensus_mode() if self._multi_drafter else None
 
@@ -791,14 +812,14 @@ class SpeculativeProxy:
                 text, done = await self._fallback_generate(
                     prompt, self.draft_n, temperature
                 )
-                return text, done, 0.0, 0.0
+                return text, done, 0.0, 0.0, 0, 0
             raise
         draft_ms = (time.monotonic() - t0) * 1000
 
         # --- Consensus path ---
         if consensus is not None:
             if not all_drafts:
-                return "", True, draft_ms, 0.0
+                return "", True, draft_ms, 0.0, 0, 0
 
             cr = verify_consensus(all_drafts, consensus)
             logger.debug(
@@ -818,16 +839,34 @@ class SpeculativeProxy:
                 self._record_round_adaptive(cr.accepted_count, cr.accepted_count,
                                             draft_ms=draft_ms, verify_ms=0.0)
                 is_done = not accepted_text
-                return accepted_text, is_done, draft_ms, 0.0
+                return accepted_text, is_done, draft_ms, 0.0, cr.accepted_count, cr.accepted_count
 
             # Consensus disagreed — fall through to target verification using
             # the consensus-accepted prefix as the draft.  Pick the longest
-            # single drafter output to use as the full draft for verification.
+            # drafter output that actually starts with the accepted prefix:
+            # the overall-longest draft may have lost the vote at an earlier
+            # position, and its tail would then be conditioned on a different
+            # prefix than the one we're trusting.
             self.stats.consensus_fallback += 1
-            draft = max(all_drafts, key=len)
+            candidates = [
+                d for d in all_drafts
+                if len(d) >= cr.accepted_count
+                and all(
+                    (d[i].token_id, d[i].text)
+                    == (cr.accepted_tokens[i].token_id, cr.accepted_tokens[i].text)
+                    for i in range(cr.accepted_count)
+                )
+            ]
+            if candidates:
+                draft = max(candidates, key=len)
+            else:
+                # No drafter extends the voted prefix (majority zigzagged
+                # between drafters) — distrust the prefix and verify the
+                # longest draft in full from the original prompt.
+                draft = max(all_drafts, key=len)
             # If consensus accepted some tokens, pass only the remaining
             # tokens to target verification (the prefix is trusted).
-            if cr.accepted_count > 0 and cr.accepted_count < len(draft):
+            if candidates and cr.accepted_count > 0 and cr.accepted_count < len(draft):
                 consensus_prefix = "".join(t.text for t in cr.accepted_tokens)
                 remaining_draft = draft[cr.accepted_count:]
                 # Verify remaining tokens against target
@@ -845,9 +884,10 @@ class SpeculativeProxy:
                     elif result.bonus_token and result.bonus_token.text:
                         accepted_text += result.bonus_token.text
 
+                    total_drafted = cr.accepted_count + len(remaining_draft)
                     total_accepted = cr.accepted_count + result.accepted_count
                     self.stats.total_rounds += 1
-                    self.stats.total_drafted += cr.accepted_count + len(remaining_draft)
+                    self.stats.total_drafted += total_drafted
                     self.stats.total_accepted += total_accepted
                     self.stats.total_tokens_output += (
                         cr.accepted_count + result.total_tokens
@@ -857,10 +897,10 @@ class SpeculativeProxy:
                     elif result.bonus_token is not None:
                         self.stats.total_bonus += 1
 
-                    self._record_round_adaptive(cr.accepted_count + len(remaining_draft), total_accepted,
+                    self._record_round_adaptive(total_drafted, total_accepted,
                                                 draft_ms=draft_ms, verify_ms=verify_ms)
                     is_done = not accepted_text
-                    return accepted_text, is_done, draft_ms, verify_ms
+                    return accepted_text, is_done, draft_ms, verify_ms, total_drafted, total_accepted
                 else:
                     remaining_text = "".join(t.text for t in remaining_draft)
                     target_text, match_len, draft_len = await self.verify_text_match(
@@ -868,30 +908,36 @@ class SpeculativeProxy:
                     )
                     verify_ms = (time.monotonic() - t1) * 1000
 
+                    # verify_text_match returns char counts — convert to
+                    # token estimates for the token-denominated counters.
+                    drafted_est = cr.accepted_count + _est_tokens(draft_len)
+                    accepted_est = cr.accepted_count + _est_tokens(match_len)
                     self.stats.total_rounds += 1
-                    self.stats.total_drafted += cr.accepted_count + draft_len
-                    self.stats.total_accepted += cr.accepted_count + match_len
+                    self.stats.total_drafted += drafted_est
+                    self.stats.total_accepted += accepted_est
                     self.stats.total_tokens_output += (
-                        cr.accepted_count + len(target_text)
+                        cr.accepted_count + _est_tokens(len(target_text))
                     )
                     if match_len < draft_len:
                         self.stats.total_resampled += 1
 
+                    # Adaptive tuner keeps raw char counts — its acceptance
+                    # ratio is unit-free.
                     self._record_round_adaptive(cr.accepted_count + draft_len, cr.accepted_count + match_len,
                                                 draft_ms=draft_ms, verify_ms=verify_ms)
                     full_text = consensus_prefix + target_text
                     is_done = not full_text
-                    return full_text, is_done, draft_ms, verify_ms
+                    return full_text, is_done, draft_ms, verify_ms, drafted_est, accepted_est
 
             # No consensus prefix — verify the full draft against target
             # (fall through to normal verification below)
 
         if not draft:
-            return "", True, draft_ms, 0.0
+            return "", True, draft_ms, 0.0, 0, 0
 
         draft_text = "".join(t.text for t in draft)
         if not draft_text:
-            return "", True, draft_ms, 0.0
+            return "", True, draft_ms, 0.0, 0, 0
 
         # Verify phase
         t1 = time.monotonic()
@@ -921,7 +967,7 @@ class SpeculativeProxy:
             self._record_round_adaptive(n_drafted, n_accepted,
                                        draft_ms=draft_ms, verify_ms=verify_ms)
             is_done = not accepted_text
-            return accepted_text, is_done, draft_ms, verify_ms
+            return accepted_text, is_done, draft_ms, verify_ms, n_drafted, n_accepted
         else:
             # Text-match fallback (Ollama or mixed backends)
             target_text, match_len, draft_len = await self.verify_text_match(
@@ -929,18 +975,22 @@ class SpeculativeProxy:
             )
             verify_ms = (time.monotonic() - t1) * 1000
 
+            # Char counts → token estimates for the shared counters.
+            drafted_est = _est_tokens(draft_len)
+            accepted_est = _est_tokens(match_len)
             self.stats.total_rounds += 1
-            self.stats.total_drafted += draft_len
-            self.stats.total_accepted += match_len
-            self.stats.total_tokens_output += len(target_text)
+            self.stats.total_drafted += drafted_est
+            self.stats.total_accepted += accepted_est
+            self.stats.total_tokens_output += _est_tokens(len(target_text))
 
             if match_len < draft_len:
                 self.stats.total_resampled += 1
 
+            # Adaptive tuner keeps raw char counts — ratio is unit-free.
             self._record_round_adaptive(draft_len, match_len,
                                        draft_ms=draft_ms, verify_ms=verify_ms)
             is_done = len(target_text) == 0
-            return target_text, is_done, draft_ms, verify_ms
+            return target_text, is_done, draft_ms, verify_ms, drafted_est, accepted_est
 
     async def pipelined_generate(
         self,
@@ -1031,9 +1081,11 @@ class SpeculativeProxy:
                 verify_ms = (time.monotonic() - t1) * 1000
                 accepted_text = target_text
                 self.stats.total_rounds += 1
-                self.stats.total_drafted += draft_len
-                self.stats.total_accepted += match_len
-                self.stats.total_tokens_output += len(target_text)
+                # Char counts → token estimates for the shared counters;
+                # adaptive tuner keeps raw chars (ratio is unit-free).
+                self.stats.total_drafted += _est_tokens(draft_len)
+                self.stats.total_accepted += _est_tokens(match_len)
+                self.stats.total_tokens_output += _est_tokens(len(target_text))
                 self._record_round_adaptive(
                     draft_len, match_len,
                     draft_ms=draft_ms, verify_ms=verify_ms,
@@ -1044,7 +1096,9 @@ class SpeculativeProxy:
                 break
 
             generated += accepted_text
-            tokens_generated += len(accepted_text.split())
+            # Count at least 1 per round: whitespace-only chunks split() to
+            # [], which would otherwise loop forever on a stuck model.
+            tokens_generated += max(1, len(accepted_text.split()))
 
             # Check if optimistic draft is usable
             # (all current tokens were accepted = optimistic prompt is correct)
@@ -1083,7 +1137,7 @@ class SpeculativeProxy:
     ) -> tuple[str, bool]:
         """Direct generation from target (no speculation)."""
         text = await self._generate_target(prompt, n, temperature)
-        self.stats.total_tokens_output += len(text)
+        self.stats.total_tokens_output += _est_tokens(len(text))
         return text, not text
 
     def _record_round_adaptive(self, drafted: int, accepted: int,
@@ -1137,21 +1191,23 @@ class SpeculativeProxy:
                 req_draft_ms = 0.0
                 req_verify_ms = 0.0
                 req_t0 = time.monotonic()
-                stats_before_drafted = self.stats.total_drafted
-                stats_before_accepted = self.stats.total_accepted
 
                 while tokens_generated < max_tokens:
-                    chunk, done, d_ms, v_ms = await self.speculation_round(
+                    chunk, done, d_ms, v_ms, r_drafted, r_accepted = await self.speculation_round(
                         prompt + generated, temperature
                     )
                     req_rounds += 1
                     req_draft_ms += d_ms
                     req_verify_ms += v_ms
+                    req_drafted += r_drafted
+                    req_accepted += r_accepted
 
                     if not chunk and done:
                         break
                     generated += chunk
-                    tokens_generated += len(chunk.split())  # approximate
+                    # Approximate; ≥1 per round so whitespace-only chunks
+                    # (split() == []) can't loop forever.
+                    tokens_generated += max(1, len(chunk.split()))
 
                     # Check stop sequences
                     if stop:
@@ -1197,8 +1253,6 @@ class SpeculativeProxy:
                 yield f"data: {json.dumps(final)}\n\n"
                 yield "data: [DONE]\n\n"
 
-                req_drafted = self.stats.total_drafted - stats_before_drafted
-                req_accepted = self.stats.total_accepted - stats_before_accepted
                 req_total_ms = (time.monotonic() - req_t0) * 1000
                 self._record_request(
                     req_rounds, req_drafted, req_accepted,
@@ -1209,24 +1263,27 @@ class SpeculativeProxy:
             return sse_stream()
         else:
             req_rounds = 0
+            req_drafted = 0
+            req_accepted = 0
             req_draft_ms = 0.0
             req_verify_ms = 0.0
             req_t0 = time.monotonic()
-            stats_before_drafted = self.stats.total_drafted
-            stats_before_accepted = self.stats.total_accepted
 
             while tokens_generated < max_tokens:
-                chunk, done, d_ms, v_ms = await self.speculation_round(
+                chunk, done, d_ms, v_ms, r_drafted, r_accepted = await self.speculation_round(
                     prompt + generated, temperature
                 )
                 req_rounds += 1
                 req_draft_ms += d_ms
                 req_verify_ms += v_ms
+                req_drafted += r_drafted
+                req_accepted += r_accepted
 
                 if not chunk and done:
                     break
                 generated += chunk
-                tokens_generated += len(chunk.split())
+                # ≥1 per round guarantees termination within max_tokens rounds
+                tokens_generated += max(1, len(chunk.split()))
 
                 if stop:
                     for s in stop:
@@ -1239,8 +1296,6 @@ class SpeculativeProxy:
                 if done:
                     break
 
-            req_drafted = self.stats.total_drafted - stats_before_drafted
-            req_accepted = self.stats.total_accepted - stats_before_accepted
             req_total_ms = (time.monotonic() - req_t0) * 1000
             self._record_request(
                 req_rounds, req_drafted, req_accepted,
@@ -1407,6 +1462,45 @@ async def handle_completion(request: Request):
     return JSONResponse(result)
 
 
+async def _adapt_chat_stream(sse_events, model: str):
+    """Re-emit text_completion SSE events as chat.completion.chunk events.
+
+    ``generate_completion``'s stream yields one complete ``data: {...}\\n\\n``
+    event (or ``data: [DONE]\\n\\n``) per iteration, so each event can be
+    parsed and rewrapped independently.  Without this, OpenAI-compatible
+    clients (openai SDK, LiteLLM, bench.py) read only
+    ``choices[0].delta.content`` and see an empty stream.
+    """
+    created = int(time.time())
+    first = True
+    async for event in sse_events:
+        payload = event[len("data: "):].strip()
+        if payload == "[DONE]":
+            yield event
+            continue
+        d = json.loads(payload)
+        c = d["choices"][0]
+        delta: dict = {}
+        if first:
+            # OpenAI convention: first chunk carries the assistant role
+            delta["role"] = "assistant"
+            first = False
+        if c.get("text"):
+            delta["content"] = c["text"]
+        chunk = {
+            "id": d["id"].replace("cmpl-", "chatcmpl-"),
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [{
+                "index": 0,
+                "delta": delta,
+                "finish_reason": c.get("finish_reason"),
+            }],
+        }
+        yield f"data: {json.dumps(chunk)}\n\n"
+
+
 async def handle_chat_completion(request: Request):
     proxy = _get_proxy()
 
@@ -1452,7 +1546,7 @@ async def handle_chat_completion(request: Request):
 
     if req.stream:
         return StreamingResponse(
-            result,
+            _adapt_chat_stream(result, proxy.config.target.model_name),
             media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )

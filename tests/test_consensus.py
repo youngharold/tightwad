@@ -163,6 +163,33 @@ class TestEdgeCases:
         assert result.needs_target_verification is True
 
 
+class TestBlobTokenConsensus:
+    """Regression: Ollama drafters return one blob DraftToken with
+    token_id=0, so id-only voting called ANY two blobs unanimous and
+    skipped target verification for the whole completion."""
+
+    @pytest.mark.parametrize("mode", list(ConsensusMode))
+    def test_same_id_different_text_disagrees(self, mode):
+        a = [DraftToken(token_id=0, logprob=0.0, text="The answer is 42")]
+        b = [DraftToken(token_id=0, logprob=0.0, text="I have no idea")]
+
+        result = verify_consensus([a, b], mode)
+
+        assert result.accepted_count == 0
+        assert result.needs_target_verification is True
+        assert result.disagreed_at == 0
+
+    @pytest.mark.parametrize("mode", list(ConsensusMode))
+    def test_identical_blobs_still_agree(self, mode):
+        a = [DraftToken(token_id=0, logprob=0.0, text="The answer is 42")]
+        b = [DraftToken(token_id=0, logprob=0.0, text="The answer is 42")]
+
+        result = verify_consensus([a, b], mode)
+
+        assert result.accepted_count == 1
+        assert result.needs_target_verification is False
+
+
 class TestConsensusResult:
     def test_mean_agreement_rate(self):
         result = ConsensusResult(

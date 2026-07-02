@@ -227,6 +227,95 @@ def test_pidfile_missing(tmp_path, monkeypatch):
     assert _read_pidfile() is None
 
 
+def test_pidfile_stores_host(tmp_path, monkeypatch):
+    """The bind host is persisted so config-less status() can health-check it."""
+    pidfile = tmp_path / "coordinator.pid"
+    monkeypatch.setattr("tightwad.coordinator.PIDFILE", pidfile)
+
+    _write_pidfile(pid=12345, port=8080, model_name="m", host="192.168.1.50")
+    data = _read_pidfile()
+    assert data is not None
+    assert data["host"] == "192.168.1.50"
+
+
+# ---------------------------------------------------------------------------
+# Stale pidfile detection (PID recycling across reboots)
+# ---------------------------------------------------------------------------
+
+import time as time_mod
+
+
+def test_read_pidfile_stale_before_boot(tmp_path, monkeypatch):
+    """A pidfile written before the current boot is discarded (regression:
+    a recycled PID made start() refuse and stop() SIGTERM an innocent
+    process)."""
+    pidfile = tmp_path / "coordinator.pid"
+    monkeypatch.setattr("tightwad.coordinator.PIDFILE", pidfile)
+
+    from tightwad.coordinator import _write_pidfile as write
+    write(pid=12345, port=8080)
+    data = json.loads(pidfile.read_text())
+    data["started"] = time_mod.time() - 1000
+    pidfile.write_text(json.dumps(data))
+
+    monkeypatch.setattr(
+        "tightwad.coordinator._boot_time", lambda: time_mod.time() - 100
+    )
+    assert _read_pidfile() is None
+    assert not pidfile.exists()
+
+
+def test_read_pidfile_fresh_after_boot(tmp_path, monkeypatch):
+    """A pidfile written after the current boot is honored."""
+    pidfile = tmp_path / "coordinator.pid"
+    monkeypatch.setattr("tightwad.coordinator.PIDFILE", pidfile)
+
+    _write_pidfile(pid=12345, port=8080)
+    monkeypatch.setattr(
+        "tightwad.coordinator._boot_time", lambda: time_mod.time() - 100
+    )
+    data = _read_pidfile()
+    assert data is not None
+    assert data["pid"] == 12345
+    assert pidfile.exists()
+
+
+def test_read_pidfile_boot_time_unknown_is_conservative(tmp_path, monkeypatch):
+    """If boot time can't be determined, skip the staleness check."""
+    pidfile = tmp_path / "coordinator.pid"
+    monkeypatch.setattr("tightwad.coordinator.PIDFILE", pidfile)
+
+    _write_pidfile(pid=12345, port=8080)
+    data = json.loads(pidfile.read_text())
+    data["started"] = time_mod.time() - 10**6
+    pidfile.write_text(json.dumps(data))
+
+    monkeypatch.setattr("tightwad.coordinator._boot_time", lambda: None)
+    data = _read_pidfile()
+    assert data is not None
+    assert data["pid"] == 12345
+
+
+def test_read_pidfile_legacy_skips_staleness_check(tmp_path, monkeypatch):
+    """Legacy int pidfiles have no 'started' — never treated as stale."""
+    pidfile = tmp_path / "coordinator.pid"
+    pidfile.write_text("54321")
+    monkeypatch.setattr("tightwad.coordinator.PIDFILE", pidfile)
+    monkeypatch.setattr(
+        "tightwad.coordinator._boot_time", lambda: time_mod.time()
+    )
+    data = _read_pidfile()
+    assert data is not None
+    assert data["pid"] == 54321
+
+
+def test_boot_time_plausible():
+    """_boot_time returns None or an epoch timestamp in the past."""
+    from tightwad.coordinator import _boot_time
+    bt = _boot_time()
+    assert bt is None or 0 < bt <= time_mod.time()
+
+
 # ---------------------------------------------------------------------------
 # Process liveness + stop() semantics
 # ---------------------------------------------------------------------------
@@ -290,3 +379,116 @@ def test_stop_escalates_to_sigkill(tmp_path, monkeypatch):
     assert coord.stop(wait_timeout=0.3) is True
     assert not pidfile.exists()
     assert kills == [signal_mod.SIGTERM, sigkill]
+
+
+def test_stop_does_not_signal_stale_pidfile(tmp_path, monkeypatch):
+    """stop() must not signal a PID recorded before the current boot —
+    the PID can only belong to an unrelated (recycled) process."""
+    pidfile = tmp_path / "coordinator.pid"
+    monkeypatch.setattr("tightwad.coordinator.PIDFILE", pidfile)
+    coord._write_pidfile(pid=12345, port=8080)
+    data = json.loads(pidfile.read_text())
+    data["started"] = 1000.0
+    pidfile.write_text(json.dumps(data))
+
+    monkeypatch.setattr(
+        "tightwad.coordinator._boot_time", lambda: 2000.0
+    )
+    kills = []
+    monkeypatch.setattr(
+        "tightwad.coordinator.os.kill",
+        lambda pid, sig: kills.append((pid, sig)),
+    )
+
+    assert coord.stop() is False
+    assert kills == []
+    assert not pidfile.exists()
+
+
+# ---------------------------------------------------------------------------
+# Health-check host resolution
+# ---------------------------------------------------------------------------
+
+
+def test_health_host_mapping():
+    """Wildcard binds are probed via loopback; specific binds directly."""
+    assert coord._health_host("0.0.0.0") == "127.0.0.1"
+    assert coord._health_host("::") == "127.0.0.1"
+    assert coord._health_host("[::]") == "127.0.0.1"
+    assert coord._health_host("") == "127.0.0.1"
+    assert coord._health_host(None) == "127.0.0.1"
+    assert coord._health_host("192.168.1.50") == "192.168.1.50"
+    assert coord._health_host("127.0.0.1") == "127.0.0.1"
+
+
+def test_status_uses_pidfile_host(tmp_path, monkeypatch):
+    """Config-less status() health-checks the host recorded in the pidfile
+    (regression: hardcoded 127.0.0.1 while llama-server bound elsewhere)."""
+    pidfile = tmp_path / "coordinator.pid"
+    monkeypatch.setattr("tightwad.coordinator.PIDFILE", pidfile)
+    coord._write_pidfile(pid=os.getpid(), port=9090, host="192.168.1.50")
+
+    checks = []
+    monkeypatch.setattr(
+        "tightwad.coordinator.check_coordinator_health",
+        lambda host, port, timeout=5.0: checks.append((host, port))
+        or {"alive": True},
+    )
+
+    result = coord.status(None)
+    assert result["coordinator"]["running"] is True
+    assert checks == [("192.168.1.50", 9090)]
+
+
+def test_status_wildcard_pidfile_host_uses_loopback(tmp_path, monkeypatch):
+    pidfile = tmp_path / "coordinator.pid"
+    monkeypatch.setattr("tightwad.coordinator.PIDFILE", pidfile)
+    coord._write_pidfile(pid=os.getpid(), port=9090, host="0.0.0.0")
+
+    checks = []
+    monkeypatch.setattr(
+        "tightwad.coordinator.check_coordinator_health",
+        lambda host, port, timeout=5.0: checks.append((host, port))
+        or {"alive": True},
+    )
+
+    coord.status(None)
+    assert checks == [("127.0.0.1", 9090)]
+
+
+def test_status_legacy_pidfile_defaults_to_loopback(tmp_path, monkeypatch):
+    """Legacy pidfiles without a host fall back to 127.0.0.1."""
+    pidfile = tmp_path / "coordinator.pid"
+    pidfile.write_text(str(os.getpid()))
+    monkeypatch.setattr("tightwad.coordinator.PIDFILE", pidfile)
+
+    checks = []
+    monkeypatch.setattr(
+        "tightwad.coordinator.check_coordinator_health",
+        lambda host, port, timeout=5.0: checks.append((host, port))
+        or {"alive": True},
+    )
+
+    coord.status(None)
+    assert checks == [("127.0.0.1", 8080)]
+
+
+def test_start_and_reclaim_health_checks_config_host(config, monkeypatch):
+    """start_and_reclaim's wait loop must probe the configured bind host."""
+    config.coordinator_host = "192.168.1.50"
+
+    checks = []
+    monkeypatch.setattr("tightwad.coordinator.start", lambda *a, **k: 4242)
+    monkeypatch.setattr("tightwad.coordinator._pid_alive", lambda pid: True)
+    monkeypatch.setattr(
+        "tightwad.coordinator.check_coordinator_health",
+        lambda host, port, timeout=5.0: checks.append((host, port))
+        or {"alive": True},
+    )
+    monkeypatch.setattr(
+        "tightwad.reclaim.reclaim_ram", lambda pid, path: None
+    )
+
+    pid, result = coord.start_and_reclaim(config, ram_reclaim="on")
+    assert pid == 4242
+    assert checks == [("192.168.1.50", 8080)]

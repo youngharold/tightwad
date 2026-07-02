@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
 
@@ -89,7 +90,7 @@ class TestSpeculationRoundLogprobs:
         })
         proxy.target_client.post = AsyncMock(return_value=target_resp)
 
-        accepted_text, is_done, draft_ms, verify_ms = await proxy.speculation_round(
+        accepted_text, is_done, draft_ms, verify_ms, r_drafted, r_accepted = await proxy.speculation_round(
             "What is the meaning of life?", temperature=0.0,
         )
 
@@ -131,7 +132,7 @@ class TestSpeculationRoundLogprobs:
         })
         proxy.target_client.post = AsyncMock(return_value=target_resp)
 
-        accepted_text, is_done, draft_ms, verify_ms = await proxy.speculation_round(
+        accepted_text, is_done, draft_ms, verify_ms, r_drafted, r_accepted = await proxy.speculation_round(
             "What is the meaning of life?", temperature=0.0,
         )
 
@@ -172,7 +173,7 @@ class TestSpeculationRoundTextMatch:
         proxy.draft_client.post = AsyncMock(return_value=draft_resp)
         proxy.target_client.post = AsyncMock(return_value=target_resp)
 
-        accepted_text, is_done, draft_ms, verify_ms = await proxy.speculation_round(
+        accepted_text, is_done, draft_ms, verify_ms, r_drafted, r_accepted = await proxy.speculation_round(
             "prompt", temperature=0.0,
         )
 
@@ -180,7 +181,8 @@ class TestSpeculationRoundTextMatch:
         assert accepted_text == "The answer is 42"
         assert is_done is False
         assert proxy.stats.total_rounds == 1
-        # In text-match mode, draft_len is char count, accepted is match_len
+        # In text-match mode the counters get token ESTIMATES derived from
+        # char counts (~4 chars/token), not raw chars — see _est_tokens.
         assert proxy.stats.total_drafted > 0
         assert proxy.stats.total_accepted > 0
 
@@ -210,7 +212,7 @@ class TestSpeculationRoundDraftFailure:
         })
         proxy.target_client.post = AsyncMock(return_value=target_resp)
 
-        accepted_text, is_done, draft_ms, verify_ms = await proxy.speculation_round(
+        accepted_text, is_done, draft_ms, verify_ms, r_drafted, r_accepted = await proxy.speculation_round(
             "prompt", temperature=0.0,
         )
 
@@ -252,7 +254,7 @@ class TestSpeculationRoundConsensus:
             side_effect=AssertionError("Target should not be called in consensus mode"),
         )
 
-        accepted_text, is_done, draft_ms, verify_ms = await proxy.speculation_round(
+        accepted_text, is_done, draft_ms, verify_ms, r_drafted, r_accepted = await proxy.speculation_round(
             "prompt", temperature=0.0,
         )
 
@@ -310,7 +312,7 @@ class TestSpeculationRoundConsensus:
         })
         proxy.target_client.post = AsyncMock(return_value=target_resp)
 
-        accepted_text, is_done, draft_ms, verify_ms = await proxy.speculation_round(
+        accepted_text, is_done, draft_ms, verify_ms, r_drafted, r_accepted = await proxy.speculation_round(
             "prompt", temperature=0.0,
         )
 
@@ -387,8 +389,8 @@ class TestStreamingStopSequences:
 
         async def fake_round(prompt, temperature=0.0):
             if seq:
-                return seq.pop(0), False, 0.0, 0.0
-            return "", True, 0.0, 0.0
+                return seq.pop(0), False, 0.0, 0.0, 2, 2
+            return "", True, 0.0, 0.0, 0, 0
 
         proxy.speculation_round = fake_round
 
@@ -509,3 +511,268 @@ class TestDraftTokensParallel:
         result = await proxy.draft_tokens_parallel("p", 4)
         await proxy.close()
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Chat streaming SSE format
+# ---------------------------------------------------------------------------
+
+
+class TestChatStreamAdapter:
+    """Regression: chat streaming re-emitted raw text_completion events, so
+    OpenAI-compatible clients reading choices[0].delta.content saw nothing."""
+
+    @pytest.mark.asyncio
+    async def test_adapter_emits_chat_completion_chunks(self):
+        from tightwad.proxy import _adapt_chat_stream
+
+        proxy = SpeculativeProxy(_ollama_config())
+        seq = ["Hello", " world"]
+
+        async def fake_round(prompt, temperature=0.0):
+            if seq:
+                return seq.pop(0), False, 0.0, 0.0, 2, 2
+            return "", True, 0.0, 0.0, 0, 0
+
+        proxy.speculation_round = fake_round
+        sse = await proxy.generate_completion(
+            prompt="p", max_tokens=100, temperature=0.0, stream=True,
+        )
+
+        events = [e async for e in _adapt_chat_stream(sse, "target-model")]
+        await proxy.close()
+
+        assert events[-1] == "data: [DONE]\n\n"
+        payloads = [json.loads(e[len("data: "):]) for e in events[:-1]]
+        assert all(p["object"] == "chat.completion.chunk" for p in payloads)
+        assert all(p["model"] == "target-model" for p in payloads)
+        assert all(p["id"].startswith("chatcmpl-") for p in payloads)
+        # Role delta on the first chunk only
+        assert payloads[0]["choices"][0]["delta"]["role"] == "assistant"
+        assert all("role" not in p["choices"][0]["delta"] for p in payloads[1:])
+        # Content deltas reassemble the full text
+        text = "".join(p["choices"][0]["delta"].get("content", "") for p in payloads)
+        assert text == "Hello world"
+        # Final chunk: empty delta + finish_reason, no earlier finish_reason
+        assert payloads[-1]["choices"][0]["delta"] == {}
+        assert payloads[-1]["choices"][0]["finish_reason"] == "stop"
+        assert all(p["choices"][0]["finish_reason"] is None for p in payloads[:-1])
+
+
+# ---------------------------------------------------------------------------
+# Generation progress guarantee
+# ---------------------------------------------------------------------------
+
+
+class TestProgressGuarantee:
+    """Regression: whitespace-only chunks split() to [], contributing 0 to
+    tokens_generated, so a model stuck on newlines looped forever."""
+
+    def _newline_proxy(self):
+        proxy = SpeculativeProxy(_ollama_config())
+
+        async def newline_round(prompt, temperature=0.0):
+            return "\n", False, 0.0, 0.0, 1, 1
+
+        proxy.speculation_round = newline_round
+        return proxy
+
+    @pytest.mark.asyncio
+    async def test_non_streaming_terminates_on_whitespace_rounds(self):
+        proxy = self._newline_proxy()
+        result = await proxy.generate_completion(
+            prompt="p", max_tokens=5, temperature=0.0, stream=False,
+        )
+        await proxy.close()
+
+        assert result["choices"][0]["text"] == "\n" * 5
+        assert result["choices"][0]["finish_reason"] == "length"
+
+    @pytest.mark.asyncio
+    async def test_streaming_terminates_on_whitespace_rounds(self):
+        proxy = self._newline_proxy()
+        sse = await proxy.generate_completion(
+            prompt="p", max_tokens=5, temperature=0.0, stream=True,
+        )
+        events = [e async for e in sse]
+        await proxy.close()
+
+        assert events[-1] == "data: [DONE]\n\n"
+        # 5 content chunks + final finish_reason chunk + [DONE]
+        assert len(events) == 7
+
+    @pytest.mark.asyncio
+    async def test_pipelined_terminates_on_whitespace_rounds(self):
+        proxy = SpeculativeProxy(_ollama_config())
+
+        async def fake_draft(prompt, n, temperature=0.0):
+            return [DraftToken(token_id=0, logprob=0.0, text="\n")]
+
+        async def fake_verify(prompt, draft_text, temperature=0.0):
+            return "\n", 1, 1
+
+        proxy.draft_tokens = fake_draft
+        proxy.verify_text_match = fake_verify
+        generated = await proxy.pipelined_generate("p", max_tokens=5)
+        await proxy.close()
+
+        assert generated == "\n" * 5
+
+
+# ---------------------------------------------------------------------------
+# Per-request stats isolation
+# ---------------------------------------------------------------------------
+
+
+class TestPerRequestStats:
+    """Regression: per-request drafted/accepted were computed by diffing the
+    shared ProxyStats totals, so concurrent requests contaminated each
+    other's RequestRecord history."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_requests_do_not_cross_contaminate(self):
+        proxy = SpeculativeProxy(_ollama_config())
+        rounds_done = {"A": 0, "B": 0}
+        per_round = {"A": (10, 8, "aaaa "), "B": (2, 1, "bb ")}
+
+        async def fake_round(prompt, temperature=0.0):
+            key = prompt[0]
+            # Yield to the event loop so the two requests interleave
+            await asyncio.sleep(0)
+            if rounds_done[key] >= 3:
+                return "", True, 0.0, 0.0, 0, 0
+            rounds_done[key] += 1
+            drafted, accepted, text = per_round[key]
+            # The real speculation_round also bumps the shared totals
+            proxy.stats.total_drafted += drafted
+            proxy.stats.total_accepted += accepted
+            return text, False, 0.0, 0.0, drafted, accepted
+
+        proxy.speculation_round = fake_round
+        await asyncio.gather(
+            proxy.generate_completion(prompt="A", max_tokens=100, stream=False),
+            proxy.generate_completion(prompt="B", max_tokens=100, stream=False),
+        )
+        await proxy.close()
+
+        by_drafted = {r.drafted: r for r in proxy.stats.request_history}
+        assert set(by_drafted) == {30, 6}, (
+            "Per-request counts must be request-local, not diffs of the "
+            "shared ProxyStats totals."
+        )
+        assert by_drafted[30].accepted == 24
+        assert by_drafted[6].accepted == 3
+
+
+# ---------------------------------------------------------------------------
+# Text-match token-estimate counters
+# ---------------------------------------------------------------------------
+
+
+class TestTextMatchTokenEstimates:
+    """Regression: text-match paths added raw CHAR counts to the token
+    counters, inflating /metrics ~4-5x on Ollama deployments."""
+
+    @pytest.mark.asyncio
+    async def test_counters_use_token_estimates_not_chars(self):
+        proxy = SpeculativeProxy(_ollama_config())
+        # 16 chars of matching text ≈ 4 tokens
+        draft_resp = _make_response(json_data={"response": "The answer is 42"})
+        target_resp = _make_response(json_data={"response": "The answer is 42"})
+        proxy.draft_client.post = AsyncMock(return_value=draft_resp)
+        proxy.target_client.post = AsyncMock(return_value=target_resp)
+
+        text, done, d_ms, v_ms, r_drafted, r_accepted = await proxy.speculation_round(
+            "prompt", temperature=0.0,
+        )
+        await proxy.close()
+
+        assert proxy.stats.total_drafted == 4
+        assert proxy.stats.total_accepted == 4
+        assert proxy.stats.total_tokens_output == 4
+        assert (r_drafted, r_accepted) == (4, 4)
+
+
+# ---------------------------------------------------------------------------
+# Consensus fallback draft selection
+# ---------------------------------------------------------------------------
+
+
+class TestConsensusFallbackDraftSelection:
+    """Regression: after a consensus disagreement the fallback verified the
+    LONGEST draft even when its prefix lost the vote, so the remaining
+    tokens were conditioned on a different prefix than the trusted one."""
+
+    def _consensus_proxy(self):
+        config = _ollama_config(
+            consensus_mode="majority",
+            drafters=[
+                ServerEndpoint(url="http://d1:11434", model_name="d1", backend="ollama"),
+                ServerEndpoint(url="http://d2:11434", model_name="d2", backend="ollama"),
+                ServerEndpoint(url="http://d3:11434", model_name="d3", backend="ollama"),
+            ],
+        )
+        return SpeculativeProxy(config)
+
+    @staticmethod
+    def _tok(token_id, text):
+        return DraftToken(token_id=token_id, logprob=-0.1, text=text)
+
+    @pytest.mark.asyncio
+    async def test_picks_longest_prefix_consistent_draft(self):
+        proxy = self._consensus_proxy()
+        # Majority accepts [x, y] (from a/b); c is longest but lost at pos 0.
+        a = [self._tok(1, "x"), self._tok(2, "y"), self._tok(3, "a")]
+        b = [self._tok(1, "x"), self._tok(2, "y"), self._tok(4, "b")]
+        c = [self._tok(9, "q"), self._tok(8, "z"),
+             self._tok(7, "w"), self._tok(7, "w"), self._tok(7, "w")]
+
+        async def fake_all(prompt, n, temperature=0.0):
+            return [a, b, c]
+
+        captured = {}
+
+        async def fake_verify(prompt, draft_text, temperature=0.0):
+            captured["prompt"] = prompt
+            captured["draft_text"] = draft_text
+            return draft_text, len(draft_text), len(draft_text)
+
+        proxy.draft_tokens_all = fake_all
+        proxy.verify_text_match = fake_verify
+
+        await proxy.speculation_round("PROMPT", temperature=0.0)
+        await proxy.close()
+
+        # Remaining draft must come from a prefix-consistent draft (a or b),
+        # never from c's post-"qz" tail.
+        assert captured["prompt"] == "PROMPT" + "xy"
+        assert captured["draft_text"] in ("a", "b")
+
+    @pytest.mark.asyncio
+    async def test_no_prefix_consistent_draft_falls_back_to_full_verify(self):
+        proxy = self._consensus_proxy()
+        # Majority prefix zigzags: pos0 from (a,b), pos1 from (b,c),
+        # pos2 from (a,c) — no single draft contains [x, y, z].
+        a = [self._tok(1, "x"), self._tok(8, "q"), self._tok(3, "z"), self._tok(4, "1")]
+        b = [self._tok(1, "x"), self._tok(2, "y"), self._tok(7, "w"), self._tok(5, "2")]
+        c = [self._tok(9, "m"), self._tok(2, "y"), self._tok(3, "z"), self._tok(6, "3")]
+
+        async def fake_all(prompt, n, temperature=0.0):
+            return [a, b, c]
+
+        captured = {}
+
+        async def fake_verify(prompt, draft_text, temperature=0.0):
+            captured["prompt"] = prompt
+            captured["draft_text"] = draft_text
+            return draft_text, len(draft_text), len(draft_text)
+
+        proxy.draft_tokens_all = fake_all
+        proxy.verify_text_match = fake_verify
+
+        await proxy.speculation_round("PROMPT", temperature=0.0)
+        await proxy.close()
+
+        # Prefix distrusted — full draft verified from the ORIGINAL prompt.
+        assert captured["prompt"] == "PROMPT"
+        assert captured["draft_text"] in ("xqz1", "xyw2", "myz3")

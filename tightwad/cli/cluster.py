@@ -165,7 +165,8 @@ def swap(ctx, model_name):
 def benchmark(ctx):
     """Run a quick benchmark against the running coordinator."""
     config = _load(ctx)
-    health = worker.check_coordinator_health("127.0.0.1", config.coordinator_port)
+    health_host = coordinator._health_host(config.coordinator_host)
+    health = worker.check_coordinator_health(health_host, config.coordinator_port)
     if not health.get("alive"):
         console.print("[red]Coordinator not running. Start it first.[/red]")
         sys.exit(1)
@@ -173,7 +174,7 @@ def benchmark(ctx):
     import httpx
     import time
 
-    base = f"http://127.0.0.1:{config.coordinator_port}"
+    base = f"http://{health_host}:{config.coordinator_port}"
 
     # Prompt processing benchmark
     console.print("[bold]Running benchmark...[/bold]\n")
