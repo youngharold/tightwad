@@ -34,7 +34,7 @@ from . import cli, console, _load, PROXY_LOG
 @click.option("-y", "--yes", is_flag=True, help="Overwrite existing config without prompting")
 @click.option("--local", is_flag=True, help="Auto-detect local GPUs and generate coordinator-only config")
 @click.option("--model-path", default=None, type=click.Path(), help="Path to GGUF model file (used with --local)")
-@click.option("--port", "local_port", default=8080, type=int, help="Coordinator port (used with --local, default: 8080)")
+@click.option("--local-port", "local_port", default=8080, type=int, help="Coordinator port (used with --local, default: 8080)")
 def init(subnet, extra_ports, output, draft_url, draft_model, draft_backend,
          target_url, target_model, target_backend, max_draft_tokens, yes,
          local, model_path, local_port):

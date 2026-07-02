@@ -33,7 +33,7 @@ Repository = "https://github.com/youngharold/tightwad"
 Issues = "https://github.com/youngharold/tightwad/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "httpx[http2]>=0.25"]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "httpx[http2]>=0.25", "httpx2>=2.0"]
 inspect = ["gguf>=0.10.0"]
 
 [project.scripts]
@@ -41,3 +41,9 @@ tightwad = "tightwad.cli:cli"
 
 [tool.setuptools.packages.find]
 include = ["tightwad*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Only collect test_*.py — e2e_loader_test.py is a manual harness run directly
+# with CLI args and exits at import time under pytest collection.
+python_files = ["test_*.py"]
